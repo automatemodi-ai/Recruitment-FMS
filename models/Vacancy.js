@@ -1,0 +1,32 @@
+import mongoose from 'mongoose';
+
+const stageHistorySchema = new mongoose.Schema({
+  stage: { type: String, required: true },
+  exited_at: { type: Date, default: Date.now }
+}, { _id: false });
+
+const vacancySchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true, index: true },
+  title: { type: String, required: true },
+  department: { type: String, required: true },
+  location: { type: String, required: true },
+  priority: { type: String, default: 'Medium' },
+  owner: { type: String, default: 'HR Manager' },
+  deadline: { type: String },
+  experience: { type: String },
+  salary: { type: String },
+  applications: { type: Number, default: 0 },
+  status: { type: String, default: 'Open', enum: ['Open', 'On-Hold', 'Cancelled', 'Closed'] },
+  stage: { type: String, default: 'Manpower Requirement Raised' },
+  openedOn: { type: String },
+  filledOn: { type: String },
+  stage_updated_at: { type: Date, default: Date.now },
+  stage_history: [stageHistorySchema],
+  jd_url: { type: String },
+  jd_public_id: { type: String }
+}, {
+  timestamps: true
+});
+
+export const Vacancy = mongoose.model('Vacancy', vacancySchema);
+export default Vacancy;

@@ -1,0 +1,93 @@
+Created At: 2026-09-02T12:53:49+05:30
+Completed At: 2026-09-02T12:53:57+05:30
+
+The command exited with code 0.
+Output:
+<truncated 9 lines>
+function bindEvents() { document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => { activeView = button.dataset.view; render() }); document.querySelector('#search')?.addEventListener('input', event => { search = event.target.value; if (activeView === 'Candidates' || activeView === 'CV Screening') render() }); document.querySelectorAll('.stage-select').forEach(select => select.onchange = event => { const candidate = data.candidates.find(item => item.id === event.target.dataset.id); candidate.stage = event.target.value; save(); render() }); document.querySelectorAll('[data-action="new-vacancy"]').forEach(button => button.onclick = () => openModal('vacancy')); document.querySelectorAll('[data-action="new-candidate"]').forEach(button => button.onclick = () => openModal('candidate')); document.querySelector('[data-action="export"]')?.addEventListener('click', () => alert('Report ready. Connect this action to your preferred export format.')) }
+function openModal(type) {
+    const vacancy = type === 'vacancy';
+    const modal = document.createElement('div');
+    modal.className = 'modal-backdrop';
+    
+    // Candidate fields HTML
+    const candidateHtml = `
+      <label>Requirement ID (Link to Vacancy)
+        <select name="requirement_id" required>
+          <option value="">Select an open vacancy...</option>
+          ${data.vacancies.filter(v => v.status === 'Open').map(v => "<option value='" + v.id + "'>" + v.id + " - " + v.title + " (" + v.department + ")</option>").join('')}
+        </select>
+      </label>
+      <label>Candidate ID<input value="CAN-${new Date().getFullYear()}-${String(data.candidates.length + 53).padStart(4, '0')}" disabled></label>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+        <label>Candidate Name<input name="name" required></label>
+        <label>Gender<select name="gender"><option>Male</option><option>Female</option><option>Other</option></select></label>
+        <label>Date of Birth<input type="date" name="dob"></label>
+        <label>Mobile Number<input type="tel" name="phone" pattern="\\d{10}" title="Must be exactly 10 digits" required></label>
+        <label>Email ID<input type="email" name="email"></label>
+        <label>Marital Status<select name="marital_status"><option>Single</option><option>Married</option><option>Other</option></select></label>
+      </div>
+      <label>Residential Address<textarea name="address" rows="2"></textarea></label>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+        <label>Current Location of Job<input name="location"></label>
+        <label>Current Salary (CTC)<input type="number" name="current_ctc"></label>
+        <label>Expected Salary<input type="number" name="expected_ctc"></label>
+        <label>Notice Period (in days)<input type="number" name="notice_period"></label>
+        <label>Total Working Experience (Years)<input type="number" step="0.1" name="experience_years"></label>
+        <label>Source<select name="source"><option>Naukri</option><option>Indeed</option><option>Referral</option><option>Consultant</option><option>Walk-in</option><option>Other</option></select></label>
+      </div>
+      <label>Reason For Leaving<input name="reason_for_leaving"></label><label>Top Skills<input name="skills" placeholder="e.g. Sales, Marketing, AutoCAD"></label>
+      <label>Referred By / Consultant Name<input name="referrer"></label>
+      <label>Attach CV/Resume<input type="file" name="cv" accept=".pdf,.doc,.docx"></label>
+      <label>Any Other Information<textarea name="remarks" rows="2"></textarea></label>
+    `;
+
+    const vacancyHtml = `<label>Date of Opening<input value="${new Date().toISOString().split('T')[0]}" disabled></label><label>Position Code<input placeholder="(Autofill)" disabled></label><label>Job Title<select name="title">${positions.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Department<select name="department">${departments.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Location<select name="location">${locations.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Priority<select name="priority">${priorities.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Job Description<input type="file" name="jd" accept=".pdf,.doc,.docx"></label><label>Minimum Experience<select name="experience">${experiences.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Salary Range<select name="salary">${salaries.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Deadline<input type="date" name="deadline" required></label><label>Employee Responsible To<select name="owner">${managers.map(p => "<option>" + p + "</option>").join('')}</select></label>`;
+
+    modal.innerHTML = `<form class="modal"><button type="button" class="modal-close">×</button><span class="section-kicker">NEW RECORD</span><h2>${vacancy ? 'Create vacancy' : 'Add candidate'}</h2>${vacancy ? vacancyHtml : candidateHtml}<button class="primary" type="submit">Save record</button></form>`;
+    
+    document.body.append(modal);
+    modal.querySelector('.modal-close').onclick = () => modal.remove();
+    modal.querySelector('form').onsubmit = event => {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      if (vacancy) {
+        data.vacancies.unshift({
+          id: `${form.get('department').substring(0, 2).toUpperCase()}-${form.get('title').split(/[\s-]+/).filter(w => w).map(w => w[0]).join('').toUpperCase()}-${String(data.vacancies.length + 1).padStart(2, '0')}`,
+          title: form.get('title'),
+          department: form.get('department'),
+          location: form.get('location'),
+          priority: form.get('priority'),
+          owner: form.get('owner') || 'Prateek Sir',
+          deadline: form.get('deadline') || '2026-09-30',
+          experience: form.get('experience'),
+          salary: form.get('salary'),
+          applications: 0, status: 'Open', stage: 'Manpower Requirement Raised', openedOn: new Date().toISOString().split('T')[0], filledOn: null
+        });
+      } else {
+        const reqId = form.get('requirement_id');
+        const linkedVacancy = data.vacancies.find(v => v.id === reqId);
+        data.candidates.unshift({
+          id: `CAN-${new Date().getFullYear()}-${String(data.candidates.length + 53).padStart(4, '0')}`,
+          requirement_id: reqId,
+          name: form.get('name'),
+          role: linkedVacancy ? linkedVacancy.title : 'Not Specified',
+          phone: form.get('phone'),
+          email: form.get('email'),
+          source: form.get('source'),
+          location: form.get('location'),
+          experience: form.get('experience_years') ? form.get('experience_years') + ' Years' : 'Not specified',
+          expected: form.get('expected_ctc') || 'Not specified',
+          stage: 'CV Screening',
+          remarks: form.get('remarks')
+        });
+        if(linkedVacancy) linkedVacancy.applications++;
+      }
+      save();
+      modal.remove();
+      render();
+    };
+  }
+render()
+
+
