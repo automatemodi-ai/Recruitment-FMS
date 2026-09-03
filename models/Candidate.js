@@ -58,5 +58,9 @@ const candidateSchema = new mongoose.Schema({
   timestamps: true
 });
 
+candidateSchema.index({ requirement_id: 1, stage: 1 });
+candidateSchema.index({ screening_status: 1 });
+candidateSchema.index({ createdAt: -1 });
+
 export const Candidate = mongoose.models.Candidate || mongoose.model('Candidate', candidateSchema);
 export default Candidate;

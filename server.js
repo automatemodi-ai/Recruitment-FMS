@@ -126,9 +126,12 @@ const router = express.Router();
 // 1. Get all Data
 router.get('/data', async (req, res) => {
   try {
-    const vacancies = await Vacancy.find().sort({ createdAt: -1 }).lean();
-    const candidates = await Candidate.find().sort({ createdAt: -1 }).lean();
+    const [vacancies, candidates] = await Promise.all([
+      Vacancy.find().sort({ createdAt: -1 }).lean(),
+      Candidate.find().sort({ createdAt: -1 }).lean()
+    ]);
 
+    res.setHeader('Cache-Control', 'private, no-cache');
     res.json({ vacancies, candidates });
   } catch (error) {
     console.error('Error fetching data from MongoDB:', error);

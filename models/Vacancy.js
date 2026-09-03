@@ -40,5 +40,8 @@ const vacancySchema = new mongoose.Schema({
   timestamps: true
 });
 
+vacancySchema.index({ status: 1, createdAt: -1 });
+vacancySchema.index({ stage: 1 });
+
 export const Vacancy = mongoose.models.Vacancy || mongoose.model('Vacancy', vacancySchema);
 export default Vacancy;
