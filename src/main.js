@@ -913,7 +913,7 @@ function openModal(type) {
         <label>Expected Salary<input type="number" name="expected_ctc"></label>
         <label>Notice Period (in days)<input type="number" name="notice_period"></label>
         <label>Total Working Experience (Years)<input type="number" step="0.1" name="experience_years"></label>
-        <label>Source<select name="source"><option>Naukri</option><option>Indeed</option><option>Referral</option><option>Consultant</option><option>Walk-in</option><option>Other</option></select></label>
+        <label>Platform applied through (Source)<select name="source"><option value="">Select (Optional)...</option><option>Apna</option><option>LinkedIn</option><option>Indeed</option><option>Naukri</option><option>Facebook</option><option>Referral</option><option>Consultant</option><option>Walk-in</option><option>Other</option></select></label>
       </div>
       <label>Top Skills<input name="skills" placeholder="e.g. Sales, Marketing, AutoCAD"></label>
       <label>Referred By / Consultant Name<input name="referrer"></label>
@@ -1005,10 +1005,11 @@ function openModal(type) {
           role: linkedVacancy ? linkedVacancy.title : 'Not Specified',
           phone: form.get('phone'),
           email: form.get('email'),
-          source: form.get('source'),
+          source: form.get('source') || 'Direct',
           location: form.get('location'),
           experience: form.get('experience_years') ? form.get('experience_years') + ' Years' : 'Not specified',
           expected: form.get('expected_ctc') || 'Not specified',
+          notice_period: form.get('notice_period') ? form.get('notice_period') + ' Days' : '',
           stage: 'Application Received (New)',
           screening_status: 'Pending Review',
           timestamp: createdAt,

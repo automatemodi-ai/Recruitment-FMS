@@ -194,17 +194,17 @@
       </label>
 
       <div class="grid-2">
-        <label>Expected Salary <span class="required-asterisk">*</span>
-          <input type="number" name="expected_ctc" required>
+        <label>Expected Salary
+          <input type="number" name="expected_ctc">
         </label>
-        <label>Notice Period (in days) <span class="required-asterisk">*</span>
+        <label>Notice Period (in days)
           <div class="hint">If currently employed</div>
-          <input type="number" name="notice_period" required>
+          <input type="number" name="notice_period">
         </label>
       </div>
 
-      <label>Platform applied through <span class="required-asterisk">*</span>
-        <select name="source" required>
+      <label>Platform applied through
+        <select name="source">
           <option value="">Select...</option>
           <option>Apna</option>
           <option>LinkedIn</option>
@@ -305,10 +305,10 @@
         role: linkedVacancy ? linkedVacancy.title : 'Not Specified',
         phone: phone,
         email: formData.get('email'),
-        source: formData.get('source'),
+        source: formData.get('source') || 'Direct',
         location: formData.get('location'),
         experience: formData.get('experience'),
-        expected: formData.get('expected_ctc'),
+        expected: formData.get('expected_ctc') || 'Not specified',
         stage: 'Application Received (New)',
         screening_status: 'Pending Review',
         remarks: formData.get('remarks') || '',
@@ -317,7 +317,7 @@
         dob: formData.get('dob'),
         marital_status: formData.get('marital_status'),
         address: formData.get('address'),
-        notice_period: formData.get('notice_period'),
+        notice_period: formData.get('notice_period') ? formData.get('notice_period') + ' Days' : '',
         cv_url: cv_url,
         timestamp: submittedAt,
         stage_updated_at: submittedAt,
