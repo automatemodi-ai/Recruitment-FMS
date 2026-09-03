@@ -46,6 +46,20 @@ const uploadStreamToCloudinary = (fileBuffer, folder, originalname) => {
   });
 };
 
+const ensureInitialStageTimeline = (record, fallbackStage) => {
+  const stamp = record.stage_updated_at || record.timestamp || new Date().toISOString();
+  const stage = record.stage || fallbackStage;
+  record.timestamp = record.timestamp || stamp;
+  record.stage_updated_at = record.stage_updated_at || stamp;
+  record.stage_history = record.stage_history || [];
+  record.stage_timestamps = record.stage_timestamps || {};
+  record.stage_timestamps[stage] = {
+    ...(record.stage_timestamps[stage] || {}),
+    entered_at: record.stage_timestamps[stage]?.entered_at || stamp
+  };
+  return record;
+};
+
 // Cached MongoDB Atlas Connection for Serverless & Local
 let cachedConnection = null;
 
@@ -108,6 +122,7 @@ router.post('/sync', async (req, res) => {
     if (vacancies && Array.isArray(vacancies)) {
       for (const v of vacancies) {
         if (!v.id) continue;
+        ensureInitialStageTimeline(v, 'Manpower Requirement Raised');
         await Vacancy.findOneAndUpdate({ id: v.id }, v, { upsert: true, new: true, setDefaultsOnInsert: true });
       }
     }
@@ -115,6 +130,7 @@ router.post('/sync', async (req, res) => {
     if (candidates && Array.isArray(candidates)) {
       for (const c of candidates) {
         if (!c.id) continue;
+        ensureInitialStageTimeline(c, 'Application Received (New)');
         await Candidate.findOneAndUpdate({ id: c.id }, c, { upsert: true, new: true, setDefaultsOnInsert: true });
       }
     }
@@ -151,6 +167,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 router.post('/vacancies', upload.single('jd'), async (req, res) => {
   try {
     const vacancyData = req.body;
+    ensureInitialStageTimeline(vacancyData, 'Manpower Requirement Raised');
     
     if (req.file) {
       const uploadResult = await uploadStreamToCloudinary(req.file.buffer, 'recruitment_fms/jds', req.file.originalname);
@@ -175,6 +192,7 @@ router.post('/vacancies', upload.single('jd'), async (req, res) => {
 router.post('/candidates', upload.single('cv'), async (req, res) => {
   try {
     const candidateData = req.body;
+    ensureInitialStageTimeline(candidateData, 'Application Received (New)');
 
     if (req.file) {
       const uploadResult = await uploadStreamToCloudinary(req.file.buffer, 'recruitment_fms/cvs', req.file.originalname);

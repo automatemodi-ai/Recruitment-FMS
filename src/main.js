@@ -90,11 +90,44 @@ document.querySelector('#app').innerHTML = `
 
 let data = { vacancies: [], candidates: [] };
 const legacyStageMap = { 'Manpower Requirement': 'Application Received (New)', 'Manpower Review': 'CV Screened & Shortlisted', 'Publish Vacancy': 'Application Received (New)', 'CV Screening': 'Application Received (New)', 'Candidate Shortlist': 'CV Screened & Shortlisted', 'Telephonic Screening': 'Interview Scheduled', 'Technical Assessment / Test': 'Interview Completed (Under Evaluation)', 'HR Interview Completed': 'Interview Completed (Under Evaluation)', 'Final Management Interview': 'Final Selection (HOD Approval)', 'Reference Check / Document Check': 'Final Selection (HOD Approval)', 'Selected - Job Offer Released': 'Offer Released', 'Offer Accepted — Joining Awaited': 'Offer Accepted (Pre-Onboarding)', 'Joined / Rejected / Dropped / On Hold': 'Candidate Joined (Closed - Won)' };
-const normalizeCandidate = candidate => ({ ...candidate, stage: legacyStageMap[candidate.stage] || candidate.stage || 'Application Received (New)', stage_updated_at: candidate.stage_updated_at || candidate.timestamp || new Date().toISOString(), stage_history: candidate.stage_history || [] });
+const nowIso = () => new Date().toISOString();
+const toIsoDateTime = value => {
+  if (!value) return '';
+  const text = String(value);
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00` : text);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+};
+const initialTimestampFor = record => toIsoDateTime(record.timestamp || record.createdAt || record.openedOn || record.stage_updated_at) || nowIso();
+const normalizeStageTimestamps = (record, currentStage) => {
+  const rawStamps = record.stage_timestamps instanceof Map ? Object.fromEntries(record.stage_timestamps) : (record.stage_timestamps || {});
+  const stamps = { ...rawStamps };
+  const initialStamp = initialTimestampFor(record);
+  (record.stage_history || []).forEach(entry => {
+    if (!entry?.stage) return;
+    const stageStamp = stamps[entry.stage] || {};
+    stageStamp.entered_at = toIsoDateTime(stageStamp.entered_at || entry.entered_at || initialStamp) || initialStamp;
+    stageStamp.completed_at = toIsoDateTime(stageStamp.completed_at || entry.completed_at || entry.exited_at) || stageStamp.completed_at || '';
+    stamps[entry.stage] = stageStamp;
+  });
+  const currentStamp = stamps[currentStage] || {};
+  currentStamp.entered_at = toIsoDateTime(currentStamp.entered_at || record.stage_updated_at || initialStamp) || initialStamp;
+  stamps[currentStage] = currentStamp;
+  return stamps;
+};
+const normalizeCandidate = candidate => {
+  const stage = legacyStageMap[candidate.stage] || candidate.stage || 'Application Received (New)';
+  const stage_updated_at = toIsoDateTime(candidate.stage_updated_at || candidate.timestamp || candidate.createdAt) || nowIso();
+  return { ...candidate, timestamp: toIsoDateTime(candidate.timestamp || candidate.createdAt || stage_updated_at) || stage_updated_at, stage, stage_updated_at, stage_history: candidate.stage_history || [], stage_timestamps: normalizeStageTimestamps({ ...candidate, stage_updated_at }, stage) };
+};
+const normalizeVacancy = vacancy => {
+  const stage = vacancyStages.includes(vacancy.stage) ? vacancy.stage : 'Manpower Requirement Raised';
+  const stage_updated_at = toIsoDateTime(vacancy.stage_updated_at || vacancy.createdAt || vacancy.openedOn) || nowIso();
+  return { ...vacancy, timestamp: toIsoDateTime(vacancy.timestamp || vacancy.createdAt || vacancy.openedOn || stage_updated_at) || stage_updated_at, stage, stage_updated_at, stage_history: vacancy.stage_history || [], stage_timestamps: normalizeStageTimestamps({ ...vacancy, stage_updated_at }, stage) };
+};
 fetch(`${API_BASE}/api/data`)
   .then(res => res.json())
   .then(resData => {
-    data = { ...resData, candidates: (resData.candidates || []).map(normalizeCandidate) };
+    data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
     render();
   })
   .catch(err => {
@@ -196,6 +229,216 @@ function getCandidateDate(candidate, field) {
   if (field === 'due') return candidate.next_action_date || candidate.interview_date || candidate.joining_date;
   if (field === 'closed') return candidate.joining_date || (candidate.stage === 'Candidate Joined (Closed - Won)' ? candidate.stage_updated_at : '');
   return candidate.timestamp || candidate.created_at || candidate.stage_updated_at;
+}
+
+function formatDateTime(value) {
+  const date = parseDateValue(value);
+  if (!date) return 'Not recorded';
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  });
+}
+
+function formatDuration(startValue, endValue) {
+  const start = parseDateValue(startValue);
+  const end = parseDateValue(endValue) || new Date();
+  if (!start) return '';
+  const diffMs = Math.max(0, end.getTime() - start.getTime());
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 1) return '< 1 min';
+  if (diffMinutes < 60) return `${diffMinutes}m`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  const remMinutes = diffMinutes % 60;
+  if (diffHours < 24) return remMinutes ? `${diffHours}h ${remMinutes}m` : `${diffHours}h`;
+  const diffDays = Math.floor(diffHours / 24);
+  const remHours = diffHours % 24;
+  return remHours ? `${diffDays}d ${remHours}h` : `${diffDays}d`;
+}
+
+function getStageTimestamp(record, stage) {
+  return (record.stage_timestamps || {})[stage] || {};
+}
+
+function ensureStageTimestamp(record, stage, timestamp = nowIso()) {
+  record.stage_timestamps = record.stage_timestamps || {};
+  const stamp = record.stage_timestamps[stage] || {};
+  stamp.entered_at = toIsoDateTime(stamp.entered_at || timestamp) || timestamp;
+  record.stage_timestamps[stage] = stamp;
+  return stamp;
+}
+
+function moveRecordToStage(record, nextStage, fallbackStage, actionNotes = '') {
+  const movedAt = nowIso();
+  const currentStage = record.stage || fallbackStage;
+  if (currentStage) {
+    const currentStamp = ensureStageTimestamp(record, currentStage, record.stage_updated_at || record.timestamp || movedAt);
+    if (currentStage !== nextStage) {
+      currentStamp.completed_at = movedAt;
+      record.stage_history = record.stage_history || [];
+      record.stage_history.push({
+        stage: currentStage,
+        to_stage: nextStage,
+        entered_at: currentStamp.entered_at,
+        exited_at: movedAt,
+        completed_at: movedAt,
+        duration: formatDuration(currentStamp.entered_at, movedAt),
+        notes: actionNotes || ''
+      });
+    }
+  }
+  record.stage = nextStage;
+  record.stage_updated_at = movedAt;
+  record.stage_timestamps = record.stage_timestamps || {};
+  record.stage_timestamps[nextStage] = {
+    entered_at: movedAt,
+    completed_at: ''
+  };
+}
+
+function renderStageTimeline(record, stageList) {
+  return `<div class="stage-timeline">${stageList.map(stage => {
+    const stamp = getStageTimestamp(record, stage);
+    const isCurrent = record.stage === stage;
+    const isDone = Boolean(stamp.completed_at);
+    if (!stamp.entered_at && !stamp.completed_at && !isCurrent) return '';
+    return `<div class="timeline-step ${isCurrent ? 'active' : ''} ${isDone ? 'done' : ''}">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <strong>${escapeHtml(stage)}</strong>
+        ${isDone ? '<span style="font-size:10px; color:#287b64; font-weight:700;">✓ Completed</span>' : isCurrent ? '<span style="font-size:10px; color:var(--green); font-weight:700;">▶ In Progress</span>' : ''}
+      </div>
+      <small>📅 Started: <b>${formatDateTime(stamp.entered_at)}</b></small>
+      ${stamp.completed_at ? `<small>⏱️ Sent to Next: <b>${formatDateTime(stamp.completed_at)}</b> (Took ${formatDuration(stamp.entered_at, stamp.completed_at)})</small>` : isCurrent ? `<small style="color:#b45309;">⌛ In Progress: <b>${formatDuration(stamp.entered_at)}</b></small>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function openStepHistoryModal(type, id) {
+  const isVacancy = type === 'vacancy';
+  const item = isVacancy ? data.vacancies.find(v => v.id === id) : data.candidates.find(c => c.id === id);
+  if (!item) return;
+
+  const title = isVacancy ? `${item.title} (${item.id})` : `${item.name} (${item.id})`;
+  const subtitle = isVacancy ? `${item.department} · ${item.location}` : `${item.role} · ${item.location || 'Showroom'}`;
+  const currentStage = isVacancy ? getVacancyStage(item) : item.stage;
+  const currentStamp = getStageTimestamp(item, currentStage);
+  const stageList = isVacancy ? vacancyStages : stages;
+  const history = item.stage_history || [];
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+
+  const rows = [];
+  history.forEach((entry, idx) => {
+    rows.push({
+      stepNum: idx + 1,
+      stage: entry.stage,
+      entered_at: entry.entered_at,
+      completed_at: entry.completed_at || entry.exited_at,
+      duration: entry.duration || formatDuration(entry.entered_at, entry.completed_at || entry.exited_at),
+      status: 'Completed',
+      notes: entry.notes || (entry.to_stage ? `Sent to ${entry.to_stage}` : '')
+    });
+  });
+
+  rows.push({
+    stepNum: rows.length + 1,
+    stage: currentStage,
+    entered_at: currentStamp.entered_at || item.stage_updated_at || item.timestamp,
+    completed_at: currentStamp.completed_at || '',
+    duration: formatDuration(currentStamp.entered_at || item.stage_updated_at || item.timestamp),
+    status: currentStamp.completed_at ? 'Completed' : 'In Progress (Active)',
+    notes: currentStamp.completed_at ? 'Stage finished' : 'Current active stage'
+  });
+
+  modal.innerHTML = `
+    <section class="modal history-modal">
+      <button type="button" class="modal-close">×</button>
+      <div class="profile-heading" style="margin-bottom: 18px;">
+        <div class="brand-mark" style="width:40px; height:40px; font-size:16px; background:var(--green); color:#fff; display:flex; align-items:center; justify-content:center; border-radius:8px;">🕒</div>
+        <div>
+          <span class="section-kicker">${isVacancy ? 'VACANCY' : 'CANDIDATE'} STEP TIMELINE & AUDIT LOG</span>
+          <h2 style="font-size:22px; margin:2px 0;">${escapeHtml(title)}</h2>
+          <p style="margin:0; color:var(--muted); font-size:12px;">${escapeHtml(subtitle)}</p>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:15px; margin-bottom:20px; background:#f3f8f5; border:1px solid #dcebe4; border-radius:8px; padding:12px 16px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:140px;">
+          <span style="font-size:11px; color:var(--muted); display:block;">Current Stage</span>
+          <strong style="color:var(--green); font-size:14px;">${escapeHtml(currentStage)}</strong>
+        </div>
+        <div style="flex:1; min-width:140px;">
+          <span style="font-size:11px; color:var(--muted); display:block;">Stage Started</span>
+          <strong style="color:var(--ink); font-size:13px;">${formatDateTime(currentStamp.entered_at || item.stage_updated_at || item.timestamp)}</strong>
+        </div>
+        <div style="flex:1; min-width:140px;">
+          <span style="font-size:11px; color:var(--muted); display:block;">Time in this Stage</span>
+          <strong style="color:#b45309; font-size:13px;">${formatDuration(currentStamp.entered_at || item.stage_updated_at || item.timestamp)}</strong>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h3 style="font-size:14px; margin-bottom:10px;">Step-by-Step Transition Log (Date & Time)</h3>
+        <table class="history-table" style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f8faf9; border-bottom:1px solid #e1e8e5; text-align:left;">
+              <th style="padding:10px 12px; width:40px;">#</th>
+              <th style="padding:10px 12px;">Step / Stage</th>
+              <th style="padding:10px 12px;">Step Started</th>
+              <th style="padding:10px 12px;">Sent to Next Step</th>
+              <th style="padding:10px 12px;">Duration</th>
+              <th style="padding:10px 12px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr style="border-bottom:1px solid #edf2f0;">
+                <td style="padding:10px 12px; font-weight:700; color:var(--muted);">${r.stepNum}</td>
+                <td style="padding:10px 12px;">
+                  <strong style="color:var(--ink);">${escapeHtml(r.stage)}</strong>
+                  ${r.notes ? `<small style="display:block; color:var(--muted); font-size:11px; margin-top:2px;">${escapeHtml(r.notes)}</small>` : ''}
+                </td>
+                <td style="padding:10px 12px; color:#2d3748;">
+                  ${formatDateTime(r.entered_at)}
+                </td>
+                <td style="padding:10px 12px; color:#2d3748;">
+                  ${r.completed_at ? formatDateTime(r.completed_at) : '<span style="color:#8a9993;">In Progress</span>'}
+                </td>
+                <td style="padding:10px 12px; font-weight:600; color:#319795;">
+                  ${r.duration || '< 1 min'}
+                </td>
+                <td style="padding:10px 12px;">
+                  <span class="status ${r.status === 'Completed' ? 'filled' : 'active'}" style="font-size:11px; padding:3px 8px; border-radius:12px; white-space:nowrap;">
+                    ${r.status === 'Completed' ? '✓ Completed' : '▶ Active'}
+                  </span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="detail-section" style="margin-top:22px;">
+        <h3 style="font-size:14px; margin-bottom:10px;">Full Workflow Stepper</h3>
+        ${renderStageTimeline(item, stageList)}
+      </div>
+
+      <div style="margin-top:24px; text-align:right;">
+        <button type="button" class="primary modal-close-btn" style="padding:8px 22px;">Close</button>
+      </div>
+    </section>
+  `;
+
+  document.body.append(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').onclick = close;
+  modal.querySelector('.modal-close-btn').onclick = close;
+  modal.onclick = e => { if (e.target === modal) close(); };
 }
 
 function applyVacancyFilters(list, filter) {
@@ -348,6 +591,7 @@ function vacancies() {
           const currentStage = getVacancyStage(item);
           const workflow = vacancyStageMeta(currentStage);
           const upcomingStage = nextVacancyStage(currentStage);
+          const currentStamp = getStageTimestamp(item, currentStage);
           return `<tr>
             <td><strong>${item.title}</strong><small>${item.id} · ${item.location}</small>
               <span class="priority-label ${priorityClass(item.priority)}" style="margin-top:6px">${item.priority}</span>
@@ -364,6 +608,14 @@ function vacancies() {
             <td class="vacancy-stage-cell">
               <strong>${currentStage}</strong>
               <small class="workflow-note"><b>${workflow.owner}</b><span>${workflow.output}${workflow.tat === null ? '' : ` · TAT ${workflow.tat === 0 ? 'same day' : workflow.tat + 'd'}`}</span></small>
+              <div class="step-timestamp-badge" style="margin:6px 0;">
+                <span class="pulse-dot"></span>
+                <span>Active Step Started: <b>${formatDateTime(currentStamp.entered_at || item.stage_updated_at || item.timestamp)}</b></span>
+              </div>
+              <button type="button" class="text-button open-step-history" data-type="vacancy" data-id="${item.id}" style="padding:0; font-size:11px; margin-bottom:8px; color:var(--green); text-align:left; font-weight:700; cursor:pointer; display:block;">
+                🕒 Step Timestamps & Log (${(item.stage_history || []).length} completed) →
+              </button>
+              ${renderStageTimeline(item, vacancyStages)}
             </td>
             <td>
               ${upcomingStage ? `<div class="vacancy-step-action"><button type="button" class="vacancy-complete-btn" data-id="${item.id}" data-next="${upcomingStage}">Complete Step</button><small>Next: ${vacancyStageLabels[upcomingStage] || upcomingStage}</small></div>` : '<span class="status filled">Workflow complete</span>'}
@@ -381,6 +633,21 @@ function vacancies() {
   </section>`
 }
 
+function renderCandidateStageCell(candidate) {
+  const stamp = getStageTimestamp(candidate, candidate.stage);
+  const historyCount = (candidate.stage_history || []).length;
+  return `<td>
+    <strong>${stageMeta(candidate).owner}</strong>
+    <small>${stageMeta(candidate).output}</small>
+    <div class="step-timestamp-badge" style="margin:4px 0;">
+      <span class="pulse-dot"></span>
+      <span>Step Started: <b>${formatDateTime(stamp.entered_at || candidate.stage_updated_at || candidate.timestamp)}</b></span>
+    </div>
+    <button type="button" class="text-button open-step-history" data-type="candidate" data-id="${candidate.id}" style="padding:0; font-size:11px; margin-top:3px; color:var(--green); text-align:left; font-weight:700; cursor:pointer; display:block;">
+      🕒 Step Timestamps & Log (${historyCount} completed) →
+    </button>
+  </td>`;
+}
 
 function candidates(list) { 
   if (activeView === 'CV Screening') {
@@ -388,7 +655,7 @@ function candidates(list) {
     const screeningSummary = filters.screening.screening_status ? `${rows.length} ${filters.screening.screening_status} application${rows.length === 1 ? '' : 's'}` : `${rows.length} applications pending review`;
     return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><button class="primary" data-action="new-candidate">+ Add application</button></div>
     ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true, screeningStatus: true })}
-    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
+    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
       <option ${item.screening_status === 'Shortlisted' ? 'selected' : ''}>Shortlisted</option>
       <option ${item.screening_status === 'Rejected' ? 'selected' : ''}>Rejected</option>
@@ -422,7 +689,7 @@ function candidates(list) {
     return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${shortlisted.length} shortlisted candidates</p></div></div>
     ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true })}
     ${tabsHtml}
-    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td><td><strong>${stageMeta(item).owner}</strong><small>${stageMeta(item).output}</small></td><td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
+    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
     <td>
       ${renderActionButtons(item)}
     </td></tr>`).join('')}
@@ -523,12 +790,10 @@ function bindEvents() {
     }
     candidate.screening_status = screeningStatus; 
     if (screeningStatus === 'Shortlisted') {
-      candidate.stage = 'CV Screened & Shortlisted';
-      candidate.stage_updated_at = new Date().toISOString();
+      moveRecordToStage(candidate, 'CV Screened & Shortlisted', 'Application Received (New)');
       alert(candidate.name + ' has been shortlisted and moved to the Candidate Pipeline.');
     } else if (screeningStatus === 'Hold') {
-      candidate.stage = 'On Hold';
-      candidate.stage_updated_at = new Date().toISOString();
+      moveRecordToStage(candidate, 'On Hold', 'Application Received (New)');
     }
     save(); render(); 
   });
@@ -547,6 +812,10 @@ function bindEvents() {
   document.querySelectorAll('[data-action="new-vacancy"]').forEach(button => button.onclick = () => openModal('vacancy'));
   document.querySelectorAll('[data-action="new-candidate"]').forEach(button => button.onclick = () => openModal('candidate'));
   document.querySelectorAll('[data-action="view-candidate"]').forEach(button => button.onclick = () => openCandidateDetails(button.dataset.id));
+  document.querySelectorAll('.open-step-history').forEach(button => button.onclick = event => {
+    event.stopPropagation();
+    openStepHistoryModal(button.dataset.type, button.dataset.id);
+  });
   document.querySelector('[data-action="export"]')?.addEventListener('click', () => alert('Report ready. Connect this action to your preferred export format.'));
 }
 
@@ -557,7 +826,7 @@ function openCandidateDetails(candidateId) {
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
   const detail = (label, value) => `<div class="detail-item"><span>${label}</span><strong>${value || 'Not provided'}</strong></div>`;
-  modal.innerHTML = `<section class="modal profile-modal"><button type="button" class="modal-close">×</button><div class="profile-heading"><span class="initials profile-avatar">${candidate.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><span class="section-kicker">CANDIDATE PROFILE</span><h2>${candidate.name}</h2><p>${candidate.id}</p></div></div><div class="profile-status"><span>Screening: <b>${candidate.screening_status || 'Pending Review'}</b></span><span>Stage: <b>${candidate.stage || 'CV Screening'}</b></span></div><div class="detail-section"><h3>Contact & personal details</h3><div class="detail-grid">${detail('Phone number', candidate.phone)}${detail('Email ID', candidate.email)}${detail('Date of birth', candidate.dob)}${detail('Gender', candidate.gender)}${detail('Marital status', candidate.marital_status)}${detail('Current location', candidate.location)}${detail('Residential address', candidate.address)}</div></div><div class="detail-section"><h3>Application details</h3><div class="detail-grid">${detail('Applied position', candidate.role)}${detail('Requirement ID', candidate.requirement_id)}${detail('Source / platform', candidate.source)}${detail('Referred by', candidate.referrer)}${detail('Current salary', candidate.current_ctc ? `₹ ${candidate.current_ctc}` : '')}${detail('Expected salary', candidate.expected ? `₹ ${candidate.expected}` : '')}${detail('Experience', candidate.experience)}${detail('Notice period', candidate.notice_period ? `${candidate.notice_period} days` : '')}${detail('Top skills', candidate.skills)}${detail('CV / Resume', candidate.cv_url ? `<a href="${candidate.cv_url}" target="_blank" style="color:var(--green); font-weight:600; text-decoration:underline;">View CV / Resume ↗</a>` : 'Not uploaded')}</div></div><div class="detail-section"><h3>Screening notes</h3><p class="profile-notes">${candidate.remarks || 'No screening notes added yet.'}</p></div><button type="button" class="primary profile-close">Close profile</button></section>`;
+  modal.innerHTML = `<section class="modal profile-modal"><button type="button" class="modal-close">×</button><div class="profile-heading"><span class="initials profile-avatar">${candidate.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><span class="section-kicker">CANDIDATE PROFILE</span><h2>${candidate.name}</h2><p>${candidate.id}</p></div></div><div class="profile-status"><span>Screening: <b>${candidate.screening_status || 'Pending Review'}</b></span><span>Stage: <b>${candidate.stage || 'CV Screening'}</b></span></div><div class="detail-section"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 style="margin:0;">Stage timestamps & Step Movement History</h3><button type="button" class="text-button open-step-history" data-type="candidate" data-id="${candidate.id}" style="font-size:11px; font-weight:700; color:var(--green); cursor:pointer;">Full Audit Log ↗</button></div>${renderStageTimeline(candidate, stages)}</div><div class="detail-section"><h3>Contact & personal details</h3><div class="detail-grid">${detail('Phone number', candidate.phone)}${detail('Email ID', candidate.email)}${detail('Date of birth', candidate.dob)}${detail('Gender', candidate.gender)}${detail('Marital status', candidate.marital_status)}${detail('Current location', candidate.location)}${detail('Residential address', candidate.address)}</div></div><div class="detail-section"><h3>Application details</h3><div class="detail-grid">${detail('Applied position', candidate.role)}${detail('Requirement ID', candidate.requirement_id)}${detail('Source / platform', candidate.source)}${detail('Referred by', candidate.referrer)}${detail('Current salary', candidate.current_ctc ? `₹ ${candidate.current_ctc}` : '')}${detail('Expected salary', candidate.expected ? `₹ ${candidate.expected}` : '')}${detail('Experience', candidate.experience)}${detail('Notice period', candidate.notice_period ? `${candidate.notice_period} days` : '')}${detail('Top skills', candidate.skills)}${detail('CV / Resume', candidate.cv_url ? `<a href="${candidate.cv_url}" target="_blank" style="color:var(--green); font-weight:600; text-decoration:underline;">View CV / Resume ↗</a>` : 'Not uploaded')}</div></div><div class="detail-section"><h3>Screening notes</h3><p class="profile-notes">${candidate.remarks || 'No screening notes added yet.'}</p></div><button type="button" class="primary profile-close">Close profile</button></section>`;
   document.body.append(modal);
   const close = () => modal.remove();
   modal.querySelector('.modal-close').onclick = close;
@@ -588,13 +857,14 @@ function openStageUpdate(candidateId, nextStage, select, onSave) {
 }
 
 function updateCandidateStage(candidate, nextStage) {
-  candidate.stage_history = candidate.stage_history || [];
-  candidate.stage_history.push({ stage: candidate.stage, exited_at: new Date().toISOString() });
-  candidate.stage = nextStage;
-  candidate.stage_updated_at = new Date().toISOString();
+  moveRecordToStage(candidate, nextStage, 'Application Received (New)');
   if (nextStage === 'Candidate Joined (Closed - Won)') {
     const vacancy = data.vacancies.find(item => item.id === candidate.requirement_id || item.title === candidate.role);
-    if (vacancy) { vacancy.status = 'Closed'; vacancy.stage = 'Vacancy Closed'; vacancy.filledOn = new Date().toISOString().split('T')[0]; }
+    if (vacancy) {
+      moveRecordToStage(vacancy, 'Vacancy Closed', 'Manpower Requirement Raised');
+      vacancy.status = 'Closed';
+      vacancy.filledOn = new Date().toISOString().split('T')[0];
+    }
   }
   save();
   render();
@@ -603,11 +873,7 @@ function updateCandidateStage(candidate, nextStage) {
 function updateVacancyStage(vacancyId, nextStage) {
   const vacancy = data.vacancies.find(item => item.id === vacancyId);
   if (!vacancy) return;
-  const currentStage = getVacancyStage(vacancy);
-  vacancy.stage_history = vacancy.stage_history || [];
-  vacancy.stage_history.push({ stage: currentStage, exited_at: new Date().toISOString() });
-  vacancy.stage = nextStage;
-  vacancy.stage_updated_at = new Date().toISOString();
+  moveRecordToStage(vacancy, nextStage, 'Manpower Requirement Raised');
   if (nextStage === 'Vacancy Closed') {
     vacancy.status = 'Closed';
     vacancy.filledOn = new Date().toISOString().split('T')[0];
@@ -688,6 +954,7 @@ function openModal(type) {
           }
         }
 
+        const createdAt = nowIso();
         data.vacancies.unshift({
           id: `${form.get('department').substring(0, 2).toUpperCase()}-${form.get('title').split(/[\s-]+/).filter(w => w).map(w => w[0]).join('').toUpperCase()}-${String(data.vacancies.length + 1).padStart(2, '0')}`,
           title: form.get('title'),
@@ -701,8 +968,11 @@ function openModal(type) {
           applications: 0,
           status: 'Open',
           stage: 'Manpower Requirement Raised',
-          openedOn: new Date().toISOString().split('T')[0],
-          stage_updated_at: new Date().toISOString(),
+          timestamp: createdAt,
+          openedOn: createdAt.split('T')[0],
+          stage_updated_at: createdAt,
+          stage_history: [],
+          stage_timestamps: { 'Manpower Requirement Raised': { entered_at: createdAt } },
           jd_url: jd_url
         });
         activeVacancyStage = 'Manpower Requirement Raised';
@@ -727,6 +997,7 @@ function openModal(type) {
           }
         }
 
+        const createdAt = nowIso();
         data.candidates.unshift({
           id: `CAN-${new Date().getFullYear()}-${String(data.candidates.length + 1).padStart(4, '0')}`,
           requirement_id: reqId,
@@ -740,8 +1011,10 @@ function openModal(type) {
           expected: form.get('expected_ctc') || 'Not specified',
           stage: 'Application Received (New)',
           screening_status: 'Pending Review',
-          stage_updated_at: new Date().toISOString(),
+          timestamp: createdAt,
+          stage_updated_at: createdAt,
           stage_history: [],
+          stage_timestamps: { 'Application Received (New)': { entered_at: createdAt } },
           reason_for_leaving: form.get('reason_for_leaving'),
           remarks: form.get('remarks'),
           cv_url: cv_url

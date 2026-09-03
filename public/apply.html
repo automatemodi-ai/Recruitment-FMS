@@ -297,6 +297,7 @@
         }
       }
       
+      const submittedAt = new Date().toISOString();
       const newCandidate = {
         id: 'CAN-' + new Date().getFullYear() + '-' + String(storedData.candidates.length + 1).padStart(4, '0'),
         requirement_id: reqId,
@@ -318,7 +319,10 @@
         address: formData.get('address'),
         notice_period: formData.get('notice_period'),
         cv_url: cv_url,
-        timestamp: new Date().toISOString()
+        timestamp: submittedAt,
+        stage_updated_at: submittedAt,
+        stage_history: [],
+        stage_timestamps: { 'Application Received (New)': { entered_at: submittedAt } }
       };
       
       storedData.candidates.unshift(newCandidate);

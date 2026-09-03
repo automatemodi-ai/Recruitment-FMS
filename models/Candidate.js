@@ -2,7 +2,17 @@ import mongoose from 'mongoose';
 
 const stageHistorySchema = new mongoose.Schema({
   stage: { type: String, required: true },
-  exited_at: { type: Date, default: Date.now }
+  to_stage: { type: String },
+  entered_at: { type: Date },
+  exited_at: { type: Date, default: Date.now },
+  completed_at: { type: Date },
+  duration: { type: String },
+  notes: { type: String }
+}, { _id: false });
+
+const stageTimestampSchema = new mongoose.Schema({
+  entered_at: { type: Date },
+  completed_at: { type: Date }
 }, { _id: false });
 
 const candidateSchema = new mongoose.Schema({
@@ -29,6 +39,7 @@ const candidateSchema = new mongoose.Schema({
   stage: { type: String, default: 'Application Received (New)' },
   stage_updated_at: { type: Date, default: Date.now },
   stage_history: [stageHistorySchema],
+  stage_timestamps: { type: Map, of: stageTimestampSchema, default: {} },
   next_action: { type: String },
   next_action_date: { type: String },
   interview_date: { type: String },
