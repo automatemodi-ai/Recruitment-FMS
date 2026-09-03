@@ -286,7 +286,7 @@
         uploadData.append('file', cvFile);
         uploadData.append('folder', 'recruitment_fms/cvs');
         try {
-          const uploadRes = await fetch('${API_BASE}/api/upload', {
+          const uploadRes = await fetch(`${API_BASE}/api/upload`, {
             method: 'POST',
             body: uploadData
           });
@@ -327,7 +327,7 @@
       }
       
       // Sync to backend MongoDB Atlas
-      fetch('${API_BASE}/api/sync', {
+      fetch(`${API_BASE}/api/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(storedData)

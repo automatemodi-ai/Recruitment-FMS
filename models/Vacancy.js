@@ -28,5 +28,5 @@ const vacancySchema = new mongoose.Schema({
   timestamps: true
 });
 
-export const Vacancy = mongoose.model('Vacancy', vacancySchema);
+export const Vacancy = mongoose.models.Vacancy || mongoose.model('Vacancy', vacancySchema);
 export default Vacancy;

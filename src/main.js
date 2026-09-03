@@ -91,7 +91,7 @@ document.querySelector('#app').innerHTML = `
 let data = { vacancies: [], candidates: [] };
 const legacyStageMap = { 'Manpower Requirement': 'Application Received (New)', 'Manpower Review': 'CV Screened & Shortlisted', 'Publish Vacancy': 'Application Received (New)', 'CV Screening': 'Application Received (New)', 'Candidate Shortlist': 'CV Screened & Shortlisted', 'Telephonic Screening': 'Interview Scheduled', 'Technical Assessment / Test': 'Interview Completed (Under Evaluation)', 'HR Interview Completed': 'Interview Completed (Under Evaluation)', 'Final Management Interview': 'Final Selection (HOD Approval)', 'Reference Check / Document Check': 'Final Selection (HOD Approval)', 'Selected - Job Offer Released': 'Offer Released', 'Offer Accepted — Joining Awaited': 'Offer Accepted (Pre-Onboarding)', 'Joined / Rejected / Dropped / On Hold': 'Candidate Joined (Closed - Won)' };
 const normalizeCandidate = candidate => ({ ...candidate, stage: legacyStageMap[candidate.stage] || candidate.stage || 'Application Received (New)', stage_updated_at: candidate.stage_updated_at || candidate.timestamp || new Date().toISOString(), stage_history: candidate.stage_history || [] });
-fetch('${API_BASE}/api/data')
+fetch(`${API_BASE}/api/data`)
   .then(res => res.json())
   .then(resData => {
     data = { ...resData, candidates: (resData.candidates || []).map(normalizeCandidate) };
@@ -255,7 +255,7 @@ function renderFilterPanel(key, settings) {
 }
 
 function save() {
-  fetch('${API_BASE}/api/sync', {
+  fetch(`${API_BASE}/api/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -677,7 +677,7 @@ function openModal(type) {
           uploadData.append('file', jdFile);
           uploadData.append('folder', 'recruitment_fms/jds');
           try {
-            const uploadRes = await fetch('${API_BASE}/api/upload', {
+            const uploadRes = await fetch(`${API_BASE}/api/upload`, {
               method: 'POST',
               body: uploadData
             });
@@ -716,7 +716,7 @@ function openModal(type) {
           uploadData.append('file', cvFile);
           uploadData.append('folder', 'recruitment_fms/cvs');
           try {
-            const uploadRes = await fetch('${API_BASE}/api/upload', {
+            const uploadRes = await fetch(`${API_BASE}/api/upload`, {
               method: 'POST',
               body: uploadData
             });

@@ -47,17 +47,31 @@ const uploadStreamToCloudinary = (fileBuffer, folder, originalname) => {
   });
 };
 
-// Connect to MongoDB Atlas
-const MONGODB_URI = process.env.MONGODB_URI;
+// Cached MongoDB Atlas Connection for Serverless & Local
+let cachedConnection = null;
 
-mongoose.connect(MONGODB_URI)
-  .then(async () => {
-    console.log('Successfully connected to MongoDB Atlas');
-    await seedDatabaseIfNeeded();
-  })
-  .catch(err => {
-    console.error('MongoDB Atlas Connection Error:', err);
-  });
+const connectDB = async () => {
+  if (mongoose.connection.readyState >= 1) return;
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    console.warn('MONGODB_URI is not defined in environment variables.');
+    return;
+  }
+  if (!cachedConnection) {
+    cachedConnection = mongoose.connect(uri)
+      .then(async (conn) => {
+        console.log('Successfully connected to MongoDB Atlas');
+        await seedDatabaseIfNeeded();
+        return conn;
+      })
+      .catch(err => {
+        cachedConnection = null;
+        console.error('MongoDB Atlas Connection Error:', err);
+        throw err;
+      });
+  }
+  return cachedConnection;
+};
 
 // Seed Initial Data from database.json if MongoDB collections are empty
 const seedDatabaseIfNeeded = async () => {
@@ -86,10 +100,24 @@ const seedDatabaseIfNeeded = async () => {
   }
 };
 
-// API Routes
+// Initiate connection
+connectDB().catch(() => {});
+
+// Middleware to ensure DB connection before handling requests
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('Database connection middleware error:', err);
+  }
+  next();
+});
+
+// API Routes Router (Mounted on both /api and / so all paths match)
+const router = express.Router();
 
 // 1. Get all Data
-app.get('/api/data', async (req, res) => {
+router.get('/data', async (req, res) => {
   try {
     const vacancies = await Vacancy.find().sort({ createdAt: -1 }).lean();
     const candidates = await Candidate.find().sort({ createdAt: -1 }).lean();
@@ -102,7 +130,7 @@ app.get('/api/data', async (req, res) => {
 });
 
 // 2. Sync / Bulk Save Data
-app.post('/api/sync', async (req, res) => {
+router.post('/sync', async (req, res) => {
   try {
     const { vacancies, candidates } = req.body;
 
@@ -128,7 +156,7 @@ app.post('/api/sync', async (req, res) => {
 });
 
 // 3. Dedicated File Upload Endpoint (Upload file to Cloudinary)
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -149,7 +177,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 });
 
 // 4. Create / Update Vacancy
-app.post('/api/vacancies', upload.single('jd'), async (req, res) => {
+router.post('/vacancies', upload.single('jd'), async (req, res) => {
   try {
     const vacancyData = req.body;
     
@@ -173,7 +201,7 @@ app.post('/api/vacancies', upload.single('jd'), async (req, res) => {
 });
 
 // 5. Create / Update Candidate (with CV Upload to Cloudinary)
-app.post('/api/candidates', upload.single('cv'), async (req, res) => {
+router.post('/candidates', upload.single('cv'), async (req, res) => {
   try {
     const candidateData = req.body;
 
@@ -203,6 +231,10 @@ app.post('/api/candidates', upload.single('cv'), async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Mount router on both /api and / so it works regardless of Vercel path rewriting
+app.use('/api', router);
+app.use('/', router);
 
 const PORT = process.env.PORT || 3000;
 if (!process.env.VERCEL) {
