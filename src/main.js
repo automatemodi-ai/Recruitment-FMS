@@ -50,43 +50,149 @@ const candidateWorkflow = {
 
 
 
-document.querySelector('#app').innerHTML = `
-<div class="shell">
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-mark">MF</div>
-      <div>
-        <strong>Modi Furniture</strong>
-        <small>Recruitment FMS</small>
+let currentUser = null;
+try {
+  currentUser = JSON.parse(localStorage.getItem('recruitment_fms_auth'));
+} catch (e) {
+  currentUser = null;
+}
+let usersList = [];
+
+function renderLogin() {
+  const app = document.querySelector('#app');
+  app.innerHTML = `
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="brand-mark" style="width:44px; height:44px; font-size:16px;">MF</div>
+        <div>
+          <strong>Modi Furniture</strong>
+          <small>Recruitment FMS Portal</small>
+        </div>
+      </div>
+
+      <h1 class="login-title">Staff Sign In</h1>
+      <p class="login-subtitle">Internal Recruitment Control Room · Authorized Personnel Only</p>
+
+      <div class="login-error" id="login-error-msg"></div>
+
+      <form class="login-form" id="login-form">
+        <label>Email Address
+          <input type="email" name="email" id="login-email" placeholder="name@company.com" required autofocus autocomplete="email">
+        </label>
+        <label>Password
+          <input type="password" name="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+        </label>
+        <button type="submit" class="login-submit-btn" id="login-btn">Log In to FMS</button>
+      </form>
+
+      <div class="login-footer">
+        Are you a job applicant? <br>
+        <a href="/apply.html" target="_blank" style="display:inline-block; margin-top:6px;">Open Candidate Application Form ↗</a>
       </div>
     </div>
-    <nav>
-      <button class="nav-item active" data-view="Dashboard"><span class="nav-icon">◱</span> Dashboard</button>
-      <button class="nav-item" data-view="Vacancies"><span class="nav-icon">○</span> Vacancies</button>
-      <button class="nav-item" data-view="CV Screening"><span class="nav-icon">◇</span> CV Screening</button>
-      <button class="nav-item" data-view="Candidates"><span class="nav-icon">◒</span> Candidate Pipeline</button>
-      <button class="nav-item" data-view="Reports"><span class="nav-icon">📊</span> Reports</button>
-    </nav>
-    <div class="sidebar-bottom">
-      <div class="sync-dot"></div>
-      System<br>Online
-    </div>
-  </aside>
-  <div style="flex:1; display:flex; flex-direction:column; height:100vh;">
-    <header class="topbar" style="padding: 16px 24px; border-bottom: 1px solid var(--line); margin-bottom: 0; align-items:center; flex-wrap:wrap; gap:12px;">
-      <div class="search">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35"></path></svg>
-        <input type="search" id="search" placeholder="Search candidates...">
-      </div>
-      <div class="top-actions">
-        <a href="/apply.html" target="_blank" style="color:var(--green); font-weight:600; text-decoration:none; font-size: 14px; margin-right:15px;">Open Candidate Form ↗</a>
-        <button class="primary" data-action="new-candidate">+ Add Candidate</button>
-      </div>
-    </header>
-    <main class="main" style="overflow-y:auto; padding: 24px; flex:1; width:100%; box-sizing:border-box;"></main>
   </div>
-</div>
-`;
+  `;
+
+  const form = document.querySelector('#login-form');
+  const errBox = document.querySelector('#login-error-msg');
+  const loginBtn = document.querySelector('#login-btn');
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    errBox.style.display = 'none';
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Verifying credentials...';
+
+    const email = document.querySelector('#login-email').value.trim();
+    const password = document.querySelector('#login-password').value;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const resJson = await res.json();
+      if (!res.ok) {
+        throw new Error(resJson.error || 'Invalid email or password');
+      }
+
+      currentUser = resJson.user;
+      localStorage.setItem('recruitment_fms_auth', JSON.stringify(currentUser));
+      initApp();
+    } catch (err) {
+      errBox.textContent = err.message || 'Login failed. Please check your credentials.';
+      errBox.style.display = 'block';
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Log In to FMS';
+    }
+  };
+}
+
+function initApp() {
+  document.querySelector('#app').innerHTML = `
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">MF</div>
+        <div>
+          <strong>Modi Furniture</strong>
+          <small>Recruitment FMS</small>
+        </div>
+      </div>
+      <nav>
+        <button class="nav-item ${activeView === 'Dashboard' ? 'active' : ''}" data-view="Dashboard"><span class="nav-icon">◱</span> Dashboard</button>
+        <button class="nav-item ${activeView === 'Vacancies' ? 'active' : ''}" data-view="Vacancies"><span class="nav-icon">○</span> Vacancies</button>
+        <button class="nav-item ${activeView === 'CV Screening' ? 'active' : ''}" data-view="CV Screening"><span class="nav-icon">◇</span> CV Screening</button>
+        <button class="nav-item ${activeView === 'Candidates' ? 'active' : ''}" data-view="Candidates"><span class="nav-icon">◒</span> Candidate Pipeline</button>
+        <button class="nav-item ${activeView === 'Reports' ? 'active' : ''}" data-view="Reports"><span class="nav-icon">📊</span> Reports</button>
+        ${currentUser && (currentUser.role === 'Superadmin' || currentUser.role === 'Admin') ? `
+        <button class="nav-item ${activeView === 'Users' ? 'active' : ''}" data-view="Users"><span class="nav-icon">👥</span> Users</button>
+        ` : ''}
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sync-dot"></div>
+        System<br>Online
+      </div>
+    </aside>
+    <div style="flex:1; display:flex; flex-direction:column; height:100vh;">
+      <header class="topbar" style="padding: 16px 24px; border-bottom: 1px solid var(--line); margin-bottom: 0; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div class="search">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+          <input type="search" id="search" placeholder="Search candidates...">
+        </div>
+        <div class="top-actions" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <a href="/apply.html" target="_blank" style="color:var(--green); font-weight:600; text-decoration:none; font-size: 13px;">Open Candidate Form ↗</a>
+          <button class="primary" data-action="new-candidate">+ Add Candidate</button>
+          <div class="user-profile-bar">
+            <div class="user-badge" title="${escapeHtml(currentUser.email || '')}">
+              <span>👤 <b>${escapeHtml(currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : 'User'))}</b></span>
+              <span class="user-badge-role">${escapeHtml(currentUser.role || 'Admin')}</span>
+            </div>
+            <button type="button" class="logout-btn" id="logout-btn" title="Sign out of Recruitment FMS">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+      <main class="main" style="overflow-y:auto; padding: 24px; flex:1; width:100%; box-sizing:border-box;"></main>
+    </div>
+  </div>
+  `;
+
+  document.querySelector('#logout-btn').onclick = () => {
+    if (confirm('Are you sure you want to log out of Recruitment FMS?')) {
+      currentUser = null;
+      localStorage.removeItem('recruitment_fms_auth');
+      renderLogin();
+    }
+  };
+
+  fetchData();
+  fetchUsers();
+}
 
 let data = { vacancies: [], candidates: [] };
 const legacyStageMap = { 'Manpower Requirement': 'Application Received (New)', 'Manpower Review': 'CV Screened & Shortlisted', 'Publish Vacancy': 'Application Received (New)', 'CV Screening': 'Application Received (New)', 'Candidate Shortlist': 'CV Screened & Shortlisted', 'Telephonic Screening': 'Interview Scheduled', 'Technical Assessment / Test': 'Interview Completed (Under Evaluation)', 'HR Interview Completed': 'Interview Completed (Under Evaluation)', 'Final Management Interview': 'Final Selection (HOD Approval)', 'Reference Check / Document Check': 'Final Selection (HOD Approval)', 'Selected - Job Offer Released': 'Offer Released', 'Offer Accepted — Joining Awaited': 'Offer Accepted (Pre-Onboarding)', 'Joined / Rejected / Dropped / On Hold': 'Candidate Joined (Closed - Won)' };
@@ -124,20 +230,22 @@ const normalizeVacancy = vacancy => {
   const stage_updated_at = toIsoDateTime(vacancy.stage_updated_at || vacancy.createdAt || vacancy.openedOn) || nowIso();
   return { ...vacancy, timestamp: toIsoDateTime(vacancy.timestamp || vacancy.createdAt || vacancy.openedOn || stage_updated_at) || stage_updated_at, stage, stage_updated_at, stage_history: vacancy.stage_history || [], stage_timestamps: normalizeStageTimestamps({ ...vacancy, stage_updated_at }, stage) };
 };
-fetch(`${API_BASE}/api/data`)
-  .then(res => res.json())
-  .then(resData => {
-    data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
-    render();
-  })
-  .catch(err => {
-    console.error('Fetch error:', err);
-    document.querySelector('main').innerHTML = '<h2 style="text-align:center;margin-top:50px;color:#e53e3e;">⚠ Backend API is not running!</h2><p style="text-align:center;">Make sure you are running <b>npm run dev</b> in the terminal so that both the backend (port 3000) and frontend are running together.</p>';
-  })
-  .catch(err => {
-    console.error('Failed to connect to backend', err);
-    render();
-  });
+
+function fetchData() {
+  fetch(`${API_BASE}/api/data`)
+    .then(res => res.json())
+    .then(resData => {
+      data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
+      render();
+    })
+    .catch(err => {
+      console.error('Fetch error:', err);
+      const main = document.querySelector('main');
+      if (main) {
+        main.innerHTML = '<h2 style="text-align:center;margin-top:50px;color:#e53e3e;">⚠ Backend API is not running!</h2><p style="text-align:center;">Make sure you are running <b>npm run dev</b> in the terminal so that both the backend (port 3000) and frontend are running together.</p>';
+      }
+    });
+}
 
 
 
@@ -520,6 +628,8 @@ function render() {
     main.innerHTML = candidates(list);
   } else if (activeView === 'Reports') {
     main.innerHTML = reports();
+  } else if (activeView === 'Users') {
+    main.innerHTML = usersView();
   }
   
   document.querySelectorAll('.nav-item').forEach(a => {
@@ -761,6 +871,150 @@ function reports() {
   </section>`
 }
 
+async function fetchUsers() {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/users`);
+    if (res.ok) {
+      usersList = await res.json();
+      if (activeView === 'Users') render();
+    }
+  } catch (err) {
+    console.error('Failed to fetch users:', err);
+  }
+}
+
+function usersView() {
+  const isSuper = currentUser && currentUser.role === 'Superadmin';
+  return `<div class="page-intro">
+    <div>
+      <span class="section-kicker">USER MANAGEMENT</span>
+      <p>Internal portal user accounts, roles, and administrative access control.</p>
+    </div>
+    <button class="primary" data-action="new-user">+ Add User</button>
+  </div>
+  <section class="table-panel" style="margin-top:20px;">
+    <table>
+      <thead>
+        <tr>
+          <th>User Name</th>
+          <th>Email Address</th>
+          <th>System Role</th>
+          <th>Created Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${usersList.map(u => `
+          <tr>
+            <td>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span class="initials" style="width:30px; height:30px; font-size:11px;">${(u.name || 'User').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}</span>
+                <strong>${escapeHtml(u.name || 'User')}</strong>
+              </div>
+            </td>
+            <td><strong>${escapeHtml(u.email)}</strong></td>
+            <td>
+              <span class="role-pill ${(u.role || 'Admin').toLowerCase()}">${escapeHtml(u.role || 'Admin')}</span>
+            </td>
+            <td>${formatDateTime(u.created_at)}</td>
+            <td>
+              ${u.email === 'automate.modi@gmail.com' 
+                ? '<small style="color:var(--green); font-weight:700;">★ Master Superadmin</small>' 
+                : (isSuper 
+                  ? `<button type="button" class="text-button delete-user-btn" data-id="${u._id}" data-name="${escapeHtml(u.name)}" style="color:#dc2626; font-weight:600; cursor:pointer;">Delete User</button>`
+                  : '<small style="color:var(--muted);">Protected</small>')}
+            </td>
+          </tr>
+        `).join('')}
+        ${usersList.length === 0 ? `<tr><td colspan="5" style="text-align:center; padding:40px; color:#9aa6a2;">Loading user accounts...</td></tr>` : ''}
+      </tbody>
+    </table>
+  </section>`;
+}
+
+function openAddUserModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+  modal.innerHTML = `
+    <form class="modal" style="max-width:460px;">
+      <button type="button" class="modal-close">×</button>
+      <span class="section-kicker">USER MANAGEMENT</span>
+      <h2>Create New User</h2>
+      <p style="margin:0 0 16px; color:var(--muted); font-size:12px;">Add internal staff access for Recruitment FMS</p>
+      <div class="login-error" id="new-user-error"></div>
+      <label>Full Name
+        <input type="text" name="name" placeholder="e.g. Rahul Sharma" required>
+      </label>
+      <label>Email Address
+        <input type="email" name="email" placeholder="name@company.com" required>
+      </label>
+      <label>Password
+        <input type="password" name="password" placeholder="Minimum 6 characters" minlength="6" required>
+      </label>
+      <label>Role
+        <select name="role" required>
+          <option value="Admin">Admin (Full FMS Access)</option>
+          <option value="Recruiter">Recruiter (Pipeline & Screening)</option>
+          <option value="Superadmin">Superadmin (Master Access)</option>
+        </select>
+      </label>
+      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+        <button type="button" class="secondary close-user-modal">Cancel</button>
+        <button type="submit" class="primary">Create User</button>
+      </div>
+    </form>
+  `;
+
+  document.body.append(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').onclick = close;
+  modal.querySelector('.close-user-modal').onclick = close;
+  modal.onclick = e => { if (e.target === modal) close(); };
+
+  modal.querySelector('form').onsubmit = async event => {
+    event.preventDefault();
+    const errBox = modal.querySelector('#new-user-error');
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    errBox.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating user...';
+
+    const formData = new FormData(event.target);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.fromEntries(formData))
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create user');
+      }
+      modal.remove();
+      alert(`User ${data.user.email} created successfully!`);
+      fetchUsers();
+    } catch (err) {
+      errBox.textContent = err.message;
+      errBox.style.display = 'block';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create User';
+    }
+  };
+}
+
+async function deleteUser(userId, userName) {
+  if (!confirm(`Are you sure you want to delete user "${userName}"?`)) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/users/${userId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to delete user');
+    alert('User deleted successfully.');
+    fetchUsers();
+  } catch (err) {
+    alert(err.message);
+  }
+}
 
 function bindEvents() {
   document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => { activeView = button.dataset.view; render(); });
@@ -812,6 +1066,8 @@ function bindEvents() {
   document.querySelectorAll('[data-action="new-vacancy"]').forEach(button => button.onclick = () => openModal('vacancy'));
   document.querySelectorAll('[data-action="new-candidate"]').forEach(button => button.onclick = () => openModal('candidate'));
   document.querySelectorAll('[data-action="view-candidate"]').forEach(button => button.onclick = () => openCandidateDetails(button.dataset.id));
+  document.querySelectorAll('[data-action="new-user"]').forEach(button => button.onclick = () => openAddUserModal());
+  document.querySelectorAll('.delete-user-btn').forEach(button => button.onclick = () => deleteUser(button.dataset.id, button.dataset.name));
   document.querySelectorAll('.open-step-history').forEach(button => button.onclick = event => {
     event.stopPropagation();
     openStepHistoryModal(button.dataset.type, button.dataset.id);
@@ -1030,8 +1286,19 @@ function openModal(type) {
 
 
 window.addEventListener('storage', e => { 
-  if (e.key === 'recruitment-fms-data') { 
-    // Handled by API now
+  if (e.key === 'recruitment_fms_auth') { 
+    try {
+      currentUser = JSON.parse(e.newValue || 'null');
+    } catch (err) {
+      currentUser = null;
+    }
+    if (!currentUser) renderLogin();
+    else initApp();
   }
 });
-render();
+
+if (!currentUser) {
+  renderLogin();
+} else {
+  initApp();
+}

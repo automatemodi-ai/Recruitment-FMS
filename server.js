@@ -8,6 +8,8 @@ import { v2 as cloudinary } from 'cloudinary';
 
 import Vacancy from './models/Vacancy.js';
 import Candidate from './models/Candidate.js';
+import { User } from './models/User.js';
+import bcrypt from 'bcryptjs';
 
 const app = express();
 app.use(cors());
@@ -63,6 +65,25 @@ const ensureInitialStageTimeline = (record, fallbackStage) => {
 // Cached MongoDB Atlas Connection for Serverless & Local
 let cachedConnection = null;
 
+const seedSuperadmin = async () => {
+  try {
+    const adminEmail = 'automate.modi@gmail.com';
+    const existing = await User.findOne({ email: adminEmail });
+    if (!existing) {
+      const hashedPassword = await bcrypt.hash('Admin@123', 10);
+      await User.create({
+        name: 'Super Admin',
+        email: adminEmail,
+        password: hashedPassword,
+        role: 'Superadmin'
+      });
+      console.log('Default superadmin seeded: automate.modi@gmail.com');
+    }
+  } catch (err) {
+    console.error('Error seeding superadmin:', err);
+  }
+};
+
 const connectDB = async () => {
   if (mongoose.connection.readyState >= 1) return;
   const uri = process.env.MONGODB_URI;
@@ -74,6 +95,7 @@ const connectDB = async () => {
     cachedConnection = mongoose.connect(uri)
       .then(async (conn) => {
         console.log('Successfully connected to MongoDB Atlas');
+        await seedSuperadmin();
         return conn;
       })
       .catch(err => {
@@ -218,6 +240,117 @@ router.post('/candidates', upload.single('cv'), async (req, res) => {
   } catch (error) {
     console.error('Error saving candidate:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 6. Auth - Login
+router.post('/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    let user = await User.findOne({ email: cleanEmail });
+
+    // Fallback seed if superadmin doesn't exist yet
+    if (!user && cleanEmail === 'automate.modi@gmail.com') {
+      await seedSuperadmin();
+      user = await User.findOne({ email: cleanEmail });
+    }
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    res.json({
+      message: 'Login successful',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error during login' });
+  }
+});
+
+// 7. Auth - List Users
+router.get('/auth/users', async (req, res) => {
+  try {
+    const users = await User.find().select('-password').sort({ created_at: -1 }).lean();
+    res.json(users);
+  } catch (err) {
+    console.error('Fetch users error:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+// 8. Auth - Create User
+router.post('/auth/users', async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const existing = await User.findOne({ email: cleanEmail });
+    if (existing) {
+      return res.status(400).json({ error: 'User with this email already exists' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = await User.create({
+      name: String(name).trim(),
+      email: cleanEmail,
+      password: hashedPassword,
+      role: role && ['Superadmin', 'Admin', 'Recruiter'].includes(role) ? role : 'Admin'
+    });
+
+    res.json({
+      message: 'User created successfully',
+      user: {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+        created_at: newUser.created_at
+      }
+    });
+  } catch (err) {
+    console.error('Create user error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create user' });
+  }
+});
+
+// 9. Auth - Delete User
+router.delete('/auth/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.email === 'automate.modi@gmail.com') {
+      return res.status(403).json({ error: 'Cannot delete primary superadmin account' });
+    }
+
+    await User.findByIdAndDelete(id);
+    res.json({ message: 'User deleted successfully' });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
   }
 });
 

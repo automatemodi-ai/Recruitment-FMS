@@ -192,3 +192,196 @@ nav { display:grid; gap:6px; } .nav-item { color:#98afa7; background:transparent
   font-size: 12px;
 }
 
+/* Authentication & Login Styles */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #eef4f1 0%, #f7faf8 100%);
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.login-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(17, 34, 27, 0.08);
+  width: 100%;
+  max-width: 420px;
+  padding: 36px 32px;
+  box-sizing: border-box;
+}
+
+.login-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.login-logo .brand-mark {
+  width: 42px;
+  height: 42px;
+  font-size: 16px;
+}
+
+.login-logo strong {
+  display: block;
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.login-logo small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.login-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 6px 0;
+}
+
+.login-subtitle {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 24px 0;
+  line-height: 1.4;
+}
+
+.login-error {
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  color: #dc2626;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 16px;
+  display: none;
+}
+
+.login-form label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 16px;
+}
+
+.login-form input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 14px;
+  margin-top: 6px;
+  box-sizing: border-box;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(40, 123, 100, 0.12);
+}
+
+.login-submit-btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--green);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background 0.15s ease;
+}
+
+.login-submit-btn:hover {
+  background: #1e6b54;
+}
+
+.login-footer {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid #edf2f0;
+  padding-top: 16px;
+}
+
+.login-footer a {
+  color: var(--green);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-footer a:hover {
+  text-decoration: underline;
+}
+
+/* User & Auth Topbar Styles */
+.user-profile-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  background: #f4f8f6;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid #dbeae3;
+}
+
+.user-badge-role {
+  background: var(--green);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+
+.logout-btn {
+  background: #fff;
+  border: 1px solid var(--line);
+  color: #b94e43;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.logout-btn:hover {
+  background: #fdf2f2;
+  border-color: #f8b4b4;
+}
+
+.role-pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.role-pill.superadmin { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+.role-pill.admin { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+.role-pill.recruiter { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+
+
