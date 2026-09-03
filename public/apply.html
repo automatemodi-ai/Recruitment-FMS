@@ -298,7 +298,7 @@
       }
       
       const newCandidate = {
-        id: 'CAN-' + new Date().getFullYear() + '-' + String(storedData.candidates.length + 53).padStart(4, '0'),
+        id: 'CAN-' + new Date().getFullYear() + '-' + String(storedData.candidates.length + 1).padStart(4, '0'),
         requirement_id: reqId,
         name: formData.get('name'),
         role: linkedVacancy ? linkedVacancy.title : 'Not Specified',

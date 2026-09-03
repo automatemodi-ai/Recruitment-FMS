@@ -631,7 +631,7 @@ function openModal(type) {
           ${data.vacancies.filter(v => v.status === 'Open').map(v => "<option value='" + v.id + "'>" + v.id + " - " + v.title + " (" + v.department + ")</option>").join('')}
         </select>
       </label>
-      <label>Candidate ID<input value="CAN-${new Date().getFullYear()}-${String(data.candidates.length + 53).padStart(4, '0')}" disabled></label>
+      <label>Candidate ID<input value="CAN-${new Date().getFullYear()}-${String(data.candidates.length + 1).padStart(4, '0')}" disabled></label>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
         <label>Candidate Name<input name="name" required></label>
         <label>Gender<select name="gender"><option>Male</option><option>Female</option><option>Other</option></select></label>
@@ -728,7 +728,7 @@ function openModal(type) {
         }
 
         data.candidates.unshift({
-          id: `CAN-${new Date().getFullYear()}-${String(data.candidates.length + 53).padStart(4, '0')}`,
+          id: `CAN-${new Date().getFullYear()}-${String(data.candidates.length + 1).padStart(4, '0')}`,
           requirement_id: reqId,
           name: form.get('name'),
           role: linkedVacancy ? linkedVacancy.title : 'Not Specified',

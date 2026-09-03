@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import multer from 'multer';
@@ -61,7 +60,6 @@ const connectDB = async () => {
     cachedConnection = mongoose.connect(uri)
       .then(async (conn) => {
         console.log('Successfully connected to MongoDB Atlas');
-        await seedDatabaseIfNeeded();
         return conn;
       })
       .catch(err => {
@@ -71,33 +69,6 @@ const connectDB = async () => {
       });
   }
   return cachedConnection;
-};
-
-// Seed Initial Data from database.json if MongoDB collections are empty
-const seedDatabaseIfNeeded = async () => {
-  try {
-    const vacancyCount = await Vacancy.countDocuments();
-    const candidateCount = await Candidate.countDocuments();
-    const dbPath = path.join(process.cwd(), 'database.json');
-
-    if (vacancyCount === 0 && candidateCount === 0 && fs.existsSync(dbPath)) {
-      console.log('Seeding MongoDB Atlas from local database.json...');
-      const rawData = fs.readFileSync(dbPath, 'utf8');
-      const data = JSON.parse(rawData);
-
-      if (data.vacancies && data.vacancies.length > 0) {
-        await Vacancy.insertMany(data.vacancies);
-        console.log(`Seeded ${data.vacancies.length} vacancies into MongoDB Atlas.`);
-      }
-
-      if (data.candidates && data.candidates.length > 0) {
-        await Candidate.insertMany(data.candidates);
-        console.log(`Seeded ${data.candidates.length} candidates into MongoDB Atlas.`);
-      }
-    }
-  } catch (err) {
-    console.error('Failed to seed database:', err);
-  }
 };
 
 // Initiate connection
