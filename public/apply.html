@@ -6,101 +6,153 @@
   <title>Job Application - Automate Modi Furniture</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
+    * { box-sizing: border-box; }
+    html { color-scheme: light; -webkit-text-size-adjust: 100%; }
     body {
       font-family: 'DM Sans', sans-serif;
       background: #f7f9f6;
       color: #202827;
       margin: 0;
-      padding: 20px;
+      min-width: 0;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: clamp(16px, 4vw, 48px) max(12px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
       display: flex;
+      align-items: flex-start;
       justify-content: center;
+      line-height: 1.5;
     }
     .form-container {
       background: #fff;
-      padding: 30px;
-      border-radius: 8px;
+      padding: clamp(20px, 5vw, 40px);
+      border: 1px solid #e2eae5;
+      border-radius: 16px;
       box-shadow: 0 10px 30px rgba(16,37,27,0.1);
       width: 100%;
-      max-width: 600px;
+      max-width: 680px;
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
     .brand {
       text-align: center;
-      margin-bottom: 25px;
+      margin-bottom: 28px;
     }
     .brand h1 {
       margin: 0;
-      font-size: 24px;
+      font-size: clamp(22px, 5vw, 28px);
+      line-height: 1.25;
       color: #287b64;
     }
     .brand p {
       margin: 5px 0 0;
-      color: #71807d;
+      color: #586b63;
       font-size: 14px;
     }
     form {
       display: grid;
-      gap: 16px;
+      gap: 20px;
+      min-width: 0;
     }
     label {
       display: grid;
       gap: 6px;
-      font-size: 13px;
+      min-width: 0;
+      font-size: 14px;
       font-weight: 700;
-      color: #71807d;
+      color: #52655e;
     }
     input, select, textarea {
       width: 100%;
-      padding: 10px;
+      max-width: 100%;
+      min-width: 0;
+      min-height: 46px;
+      padding: 11px 12px;
       border: 1px solid #dfe7e2;
-      border-radius: 5px;
+      border-radius: 8px;
       font-family: inherit;
-      font-size: 14px;
+      font-size: 16px;
+      line-height: 1.4;
+      color: #202827;
       background: #fafcfb;
       box-sizing: border-box;
     }
+    select { text-overflow: ellipsis; }
+    textarea { resize: vertical; min-height: 96px; }
+    input[type="file"] {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding: 6px;
+      font-size: 14px;
+    }
+    input[type="file"]::file-selector-button {
+      min-height: 36px;
+      margin-right: 10px;
+      padding: 7px 12px;
+      border: 0;
+      border-radius: 5px;
+      background: #e3eee8;
+      color: #245e4d;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
     input:focus, select:focus, textarea:focus {
-      outline: none;
+      outline: 3px solid #b4d9ca;
+      outline-offset: 2px;
       border-color: #287b64;
       background: #fff;
     }
     .hint {
-      font-size: 11px;
-      color: #9aa6a2;
+      font-size: 12px;
+      color: #61756b;
       font-weight: 400;
       margin-top: -3px;
     }
     .grid-2 {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 16px;
+      align-items: end;
+      min-width: 0;
     }
     button {
       background: #287b64;
       color: #fff;
       border: none;
       padding: 14px;
-      border-radius: 5px;
-      font-size: 15px;
+      min-width: 0;
+      min-height: 48px;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 16px;
       font-weight: 700;
       cursor: pointer;
       margin-top: 10px;
+      overflow-wrap: anywhere;
+      touch-action: manipulation;
     }
     button:hover {
       background: #1d614e;
     }
+    button:focus-visible { outline: 3px solid #287b64; outline-offset: 3px; }
+    button:disabled { cursor: wait; opacity: 0.7; }
     #success-msg {
       display: none;
       text-align: center;
-      padding: 40px 20px;
+      padding: clamp(24px, 6vw, 40px) clamp(12px, 4vw, 20px);
       background: #dff2e9;
       border-radius: 8px;
       color: #287b64;
     }
     #success-msg h2 { margin-top: 0; }
     
-    @media (max-width: 500px) {
+    @media (max-width: 560px) {
       .grid-2 { grid-template-columns: 1fr; }
-      .form-container { padding: 20px; }
+      .brand { margin-bottom: 24px; }
+    }
+    @media (max-width: 360px) {
+      .form-container { padding: 18px 14px; }
+      input[type="file"]::file-selector-button { margin-right: 6px; padding-inline: 8px; }
     }
   
     input:focus:invalid, select:focus:invalid, textarea:focus:invalid {
@@ -108,7 +160,7 @@
       box-shadow: 0 0 0 1px #e53e3e;
     }
     .required-asterisk {
-      color: #e53e3e;
+      color: #bf3030;
       margin-left: 2px;
     }
     label {
@@ -118,28 +170,28 @@
   </style>
 </head>
 <body>
-  <div class="form-container" id="container">
+  <main class="form-container" id="container">
     <div class="brand">
       <h1>Automate Modi Furniture</h1>
       <p>Job Application Form</p>
     </div>
     <form id="job-form">
       
-      <label>Position Applied for <span class="required-asterisk">*</span>
+      <label><span>Position Applied for <span class="required-asterisk" aria-hidden="true">*</span></span>
         <select name="requirement_id" id="position-select" required>
           <option value="">Select an open position...</option>
         </select>
       </label>
 
-      <label>Full Name <span class="required-asterisk">*</span>
-        <input type="text" name="name" required>
+      <label><span>Full Name <span class="required-asterisk" aria-hidden="true">*</span></span>
+        <input type="text" name="name" autocomplete="name" required>
       </label>
 
       <div class="grid-2">
-        <label>Date of Birth <span class="required-asterisk">*</span>
-          <input type="date" name="dob" id="dob" required>
+        <label><span>Date of Birth <span class="required-asterisk" aria-hidden="true">*</span></span>
+          <input type="date" name="dob" id="dob" autocomplete="bday" required>
         </label>
-        <label>Gender <span class="required-asterisk">*</span>
+        <label><span>Gender <span class="required-asterisk" aria-hidden="true">*</span></span>
           <select name="gender" required>
             <option value="">Select...</option>
             <option>Male</option>
@@ -150,11 +202,11 @@
       </div>
 
       <div class="grid-2">
-        <label>Phone number <span class="required-asterisk">*</span>
-          <input type="tel" name="phone" pattern="[0-9]{10}" title="Must be exactly 10 digits" required>
+        <label><span>Phone number <span class="required-asterisk" aria-hidden="true">*</span></span>
+          <input type="tel" name="phone" autocomplete="tel-national" inputmode="numeric" pattern="[0-9]{10}" title="Must be exactly 10 digits" required>
         </label>
-        <label>Email ID <span class="required-asterisk">*</span>
-          <input type="email" name="email" required>
+        <label><span>Email ID <span class="required-asterisk" aria-hidden="true">*</span></span>
+          <input type="email" name="email" autocomplete="email" required>
         </label>
       </div>
 
@@ -168,16 +220,16 @@
         </select>
       </label>
 
-      <label>Residential Address <span class="required-asterisk">*</span>
-        <textarea name="address" rows="3" required></textarea>
+      <label><span>Residential Address <span class="required-asterisk" aria-hidden="true">*</span></span>
+        <textarea name="address" rows="3" autocomplete="street-address" required></textarea>
       </label>
 
       <div class="grid-2">
-        <label>Current Location of Job <span class="required-asterisk">*</span>
-          <div class="hint">Mention Area also, e.g., Murlipura, Jaipur</div>
-          <input type="text" name="location" required>
+        <label><span>Current Location of Job <span class="required-asterisk" aria-hidden="true">*</span></span>
+          <span class="hint" id="location-hint">Mention Area also, e.g., Murlipura, Jaipur</span>
+          <input type="text" name="location" aria-describedby="location-hint" required>
         </label>
-        <label>Total Working Experience <span class="required-asterisk">*</span>
+        <label><span>Total Working Experience <span class="required-asterisk" aria-hidden="true">*</span></span>
           <select name="experience" required>
             <option value="">Select...</option>
             <option>Fresher (0-2 years)</option>
@@ -188,9 +240,9 @@
         </label>
       </div>
 
-      <label>What are your top Skills? <span class="required-asterisk">*</span>
-        <div class="hint">e.g., Sales, AutoCAD, Communication</div>
-        <input type="text" name="skills" required>
+      <label><span>What are your top Skills? <span class="required-asterisk" aria-hidden="true">*</span></span>
+        <span class="hint" id="skills-hint">e.g., Sales, AutoCAD, Communication</span>
+        <input type="text" name="skills" aria-describedby="skills-hint" required>
       </label>
 
       <div class="grid-2">
@@ -198,8 +250,8 @@
           <input type="number" name="expected_ctc">
         </label>
         <label>Notice Period (in days)
-          <div class="hint">If currently employed</div>
-          <input type="number" name="notice_period">
+          <span class="hint" id="notice-hint">If currently employed</span>
+          <input type="number" name="notice_period" aria-describedby="notice-hint">
         </label>
       </div>
 
@@ -216,9 +268,9 @@
         </select>
       </label>
 
-      <label>Attach your CV or Resume <span class="required-asterisk">*</span>
-        <div class="hint">Accepted formats: .pdf, .doc, .docx (Max 5MB)</div>
-        <input type="file" name="cv" accept=".pdf,.doc,.docx" id="cv-upload" required>
+      <label><span>Attach your CV or Resume <span class="required-asterisk" aria-hidden="true">*</span></span>
+        <span class="hint" id="cv-hint">Accepted formats: .pdf, .doc, .docx (Max 5MB)</span>
+        <input type="file" name="cv" accept=".pdf,.doc,.docx" id="cv-upload" aria-describedby="cv-hint" required>
       </label>
 
       <label>Any Other Information you'd like to share?
@@ -228,11 +280,11 @@
       <button type="submit">Submit Application</button>
     </form>
     
-    <div id="success-msg">
+    <div id="success-msg" role="status" aria-live="polite">
       <h2>Application Submitted!</h2>
       <p>Thank you for applying at Automate Modi Furniture. Our HR team will review your application and contact you if your profile matches our requirements.</p>
     </div>
-  </div>
+  </main>
 
   <script>
     const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5173' ? 'http://localhost:3000' : '';

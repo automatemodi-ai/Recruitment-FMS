@@ -1,4 +1,8 @@
 import './style.css'
+import { setupNavigation } from './navigation.js'
+import { prepareTables, revealActiveTabs, mountModal } from './responsive.js'
+
+let navigationUI;
 
 const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5173' ? 'http://localhost:3000' : '';
 
@@ -59,6 +63,7 @@ try {
 let usersList = [];
 
 function renderLogin() {
+  navigationUI?.destroy();
   const app = document.querySelector('#app');
   app.innerHTML = `
   <div class="login-container">
@@ -131,17 +136,19 @@ function renderLogin() {
 }
 
 function initApp() {
+  navigationUI?.destroy();
   document.querySelector('#app').innerHTML = `
   <div class="shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="primary-sidebar" aria-label="Main navigation">
       <div class="brand">
         <div class="brand-mark">MF</div>
-        <div>
+        <div class="brand-copy">
           <strong>Modi Furniture</strong>
           <small>Recruitment FMS</small>
         </div>
       </div>
-      <nav>
+      <button type="button" id="navigation-close" class="navigation-close" aria-label="Close navigation">×</button>
+      <nav aria-label="Recruitment sections">
         <button class="nav-item ${activeView === 'Dashboard' ? 'active' : ''}" data-view="Dashboard"><span class="nav-icon">◱</span> Dashboard</button>
         <button class="nav-item ${activeView === 'Vacancies' ? 'active' : ''}" data-view="Vacancies"><span class="nav-icon">○</span> Vacancies</button>
         <button class="nav-item ${activeView === 'CV Screening' ? 'active' : ''}" data-view="CV Screening"><span class="nav-icon">◇</span> CV Screening</button>
@@ -156,14 +163,18 @@ function initApp() {
         System<br>Online
       </div>
     </aside>
-    <div style="flex:1; display:flex; flex-direction:column; height:100vh;">
-      <header class="topbar" style="padding: 16px 24px; border-bottom: 1px solid var(--line); margin-bottom: 0; align-items:center; flex-wrap:wrap; gap:12px;">
+    <button type="button" class="navigation-backdrop" aria-label="Close navigation" tabindex="-1" hidden></button>
+    <div class="app-content">
+      <header class="topbar">
+        <button type="button" id="navigation-toggle" class="navigation-toggle" aria-controls="primary-sidebar" aria-expanded="true" aria-label="Collapse navigation">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
         <div class="search">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35"></path></svg>
-          <input type="search" id="search" placeholder="Search by name, skills (AutoCAD, Tally), phone, location, ID..." style="min-width:300px;">
+          <input type="search" id="search" placeholder="Search" aria-label="Search candidates">
         </div>
-        <div class="top-actions" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-          <a href="/apply.html" target="_blank" style="color:var(--green); font-weight:600; text-decoration:none; font-size: 13px;">Open Candidate Form ↗</a>
+        <div class="top-actions">
+          <a class="candidate-form-link" href="/apply.html" target="_blank" rel="noopener">Open Candidate Form ↗</a>
           <button class="primary" data-action="new-candidate">+ Add Candidate</button>
           <div class="user-profile-bar">
             <div class="user-badge" title="${escapeHtml(currentUser.email || '')}">
@@ -177,10 +188,23 @@ function initApp() {
           </div>
         </div>
       </header>
-      <main class="main" style="overflow-y:auto; padding: 24px; flex:1; width:100%; box-sizing:border-box;"></main>
+      <main class="main" id="main-content" tabindex="-1" aria-label="Recruitment workspace"></main>
     </div>
   </div>
   `;
+
+  document.querySelectorAll('.nav-item').forEach(button => {
+    const label = button.childNodes[button.childNodes.length - 1];
+    const text = label.textContent.trim();
+    const span = document.createElement('span');
+    span.className = 'nav-label';
+    span.textContent = text;
+    label.replaceWith(span);
+    button.setAttribute('aria-label', text);
+    button.title = text;
+    button.querySelector('.nav-icon').setAttribute('aria-hidden', 'true');
+  });
+  navigationUI = setupNavigation();
 
   document.querySelector('#logout-btn').onclick = () => {
     if (confirm('Are you sure you want to log out of Recruitment FMS?')) {
@@ -565,7 +589,7 @@ function openStepHistoryModal(type, id) {
     </section>
   `;
 
-  document.body.append(modal);
+  mountModal(modal);
   const close = () => modal.remove();
   modal.querySelector('.modal-close').onclick = close;
   modal.querySelector('.modal-close-btn').onclick = close;
@@ -603,6 +627,8 @@ function renderSelectFilter(filterKey, label, options, placeholder, selectedValu
   return `<label>${label}<select class="filter-control" data-filter-key="${filterKey}"><option value="">${placeholder}</option>${options.map(option => `<option value="${escapeHtml(option)}" ${sameFilterValue(selectedValue, option) ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;
 }
 
+const filterPanelExpanded = new Map();
+
 function renderFilterPanel(key, settings) {
   const filter = filters[key];
   const candidateRoles = uniqueValues(data.candidates.map(candidate => candidate.role));
@@ -623,9 +649,10 @@ function renderFilterPanel(key, settings) {
   if (settings.source) fields.push(renderSelectFilter('source', 'Source', sourceOptions, 'All sources', filter.source));
   if (settings.screeningStatus) fields.push(renderSelectFilter('screening_status', 'Screening', ['Pending Review', 'Shortlisted', 'Rejected', 'Hold'], 'All screening', filter.screening_status));
   const activeCount = Object.entries(filter).filter(([field, value]) => field !== 'dateField' && value).length;
+  const expanded = filterPanelExpanded.get(key) ?? !window.matchMedia('(max-width: 640px)').matches;
   return `<section class="filter-panel" data-filter-view="${key}">
-    <div class="filter-head"><div><span class="section-kicker">FILTERS</span><strong>${settings.title}</strong></div><button type="button" class="text-button filter-reset" data-filter-reset="${key}">Reset${activeCount ? ` (${activeCount})` : ''}</button></div>
-    <div class="filter-grid">${fields.join('')}</div>
+    <div class="filter-head"><button type="button" class="filter-toggle" data-filter-toggle="${key}" aria-expanded="${expanded}" aria-controls="filters-${key}"><span><span class="section-kicker">FILTERS${activeCount ? ` · ${activeCount} active` : ''}</span><strong>${settings.title}</strong></span><span class="filter-chevron" aria-hidden="true">⌄</span></button><button type="button" class="text-button filter-reset" data-filter-reset="${key}">Reset${activeCount ? ` (${activeCount})` : ''}</button></div>
+    <div class="filter-grid" id="filters-${key}" ${expanded ? '' : 'hidden'}>${fields.join('')}</div>
   </section>`;
 }
 
@@ -658,10 +685,15 @@ function render() {
   }
   
   document.querySelectorAll('.nav-item').forEach(a => {
-    a.classList.toggle('active', a.dataset.view === activeView || (a.dataset.view === 'Candidates' && activeView === 'CV Screening'));
+    const selected = a.dataset.view === activeView;
+    a.classList.toggle('active', selected);
+    if (selected) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
   });
   
+  prepareTables(main);
   bindEvents();
+  revealActiveTabs(main);
 }
 
 
@@ -975,7 +1007,7 @@ function renderActionButtons(candidate) {
   const currentIndex = stages.indexOf(candidate.stage);
   const nextStage = currentIndex >= 0 && currentIndex < stages.length - 1 ? stages[currentIndex + 1] : null;
   
-  let html = `<div style="display:flex; gap:8px;">`;
+  let html = `<div class="candidate-actions">`;
   
   if (['Candidate Joined (Closed - Won)', 'Rejected', 'Dropped / Ghosted'].includes(candidate.stage)) {
     return `<span style="color:#71807d; font-size:13px; font-weight:600;">${candidate.stage}</span>`;
@@ -1423,7 +1455,7 @@ function openAddUserModal() {
     </form>
   `;
 
-  document.body.append(modal);
+  mountModal(modal);
   const close = () => modal.remove();
   modal.querySelector('.modal-close').onclick = close;
   modal.querySelector('.close-user-modal').onclick = close;
@@ -1474,7 +1506,12 @@ async function deleteUser(userId, userName) {
 }
 
 function bindEvents() {
-  document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => { activeView = button.dataset.view; render(); });
+  document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => {
+    activeView = button.dataset.view;
+    navigationUI?.close(false);
+    render();
+    document.querySelector('#main-content')?.focus({ preventScroll: true });
+  });
   const searchInput = document.querySelector('#search');
   if (searchInput && !searchInput.dataset.listenerBound) {
     searchInput.dataset.listenerBound = 'true';
@@ -1492,6 +1529,12 @@ function bindEvents() {
     if (!panel) return;
     filters[panel.dataset.filterView][event.target.dataset.filterKey] = event.target.value;
     render();
+  });
+  document.querySelectorAll('.filter-toggle').forEach(button => button.onclick = () => {
+    const expanded = button.getAttribute('aria-expanded') !== 'true';
+    filterPanelExpanded.set(button.dataset.filterToggle, expanded);
+    button.setAttribute('aria-expanded', String(expanded));
+    document.getElementById(button.getAttribute('aria-controls')).hidden = !expanded;
   });
   document.querySelectorAll('.filter-reset').forEach(button => button.onclick = () => {
     const key = button.dataset.filterReset;
@@ -1566,7 +1609,7 @@ function openCandidateDetails(candidateId) {
   modal.className = 'modal-backdrop';
   const detail = (label, value) => `<div class="detail-item"><span>${label}</span><strong>${value || 'Not provided'}</strong></div>`;
   modal.innerHTML = `<section class="modal profile-modal"><button type="button" class="modal-close">×</button><div class="profile-heading"><span class="initials profile-avatar">${candidate.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><span class="section-kicker">CANDIDATE PROFILE</span><h2>${candidate.name}</h2><p>${candidate.id}</p></div></div><div class="profile-status"><span>Screening: <b>${candidate.screening_status || 'Pending Review'}</b></span><span>Stage: <b>${candidate.stage || 'CV Screening'}</b></span></div><div class="detail-section"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 style="margin:0;">Stage timestamps & Step Movement History</h3><button type="button" class="text-button open-step-history" data-type="candidate" data-id="${candidate.id}" style="font-size:11px; font-weight:700; color:var(--green); cursor:pointer;">Full Audit Log ↗</button></div>${renderStageTimeline(candidate, stages)}</div><div class="detail-section"><h3>Contact & personal details</h3><div class="detail-grid">${detail('Phone number', candidate.phone)}${detail('Email ID', candidate.email)}${detail('Date of birth', candidate.dob)}${detail('Gender', candidate.gender)}${detail('Marital status', candidate.marital_status)}${detail('Current location', candidate.location)}${detail('Residential address', candidate.address)}</div></div><div class="detail-section"><h3>Application details</h3><div class="detail-grid">${detail('Applied position', candidate.role)}${detail('Requirement ID', candidate.requirement_id)}${detail('Source / platform', candidate.source)}${detail('Referred by', candidate.referrer)}${detail('Current salary', candidate.current_ctc ? `₹ ${candidate.current_ctc}` : '')}${detail('Expected salary', candidate.expected ? `₹ ${candidate.expected}` : '')}${detail('Experience', candidate.experience)}${detail('Notice period', candidate.notice_period ? `${candidate.notice_period} days` : '')}${detail('Top skills', candidate.skills)}${detail('CV / Resume', candidate.cv_url ? `<a href="${candidate.cv_url}" target="_blank" style="color:var(--green); font-weight:600; text-decoration:underline;">View CV / Resume ↗</a>` : 'Not uploaded')}</div></div><div class="detail-section"><h3>Screening notes</h3><p class="profile-notes">${candidate.remarks || 'No screening notes added yet.'}</p></div><button type="button" class="primary profile-close">Close profile</button></section>`;
-  document.body.append(modal);
+  mountModal(modal);
   const close = () => modal.remove();
   modal.querySelector('.modal-close').onclick = close;
   modal.querySelector('.profile-close').onclick = close;
@@ -1589,7 +1632,7 @@ function openStageUpdate(candidateId, nextStage, select, onSave) {
   modal.className = 'modal-backdrop';
   const fields = needsInterview ? '<label>Interview date<input type="date" name="interview_date" required></label><label>Interview time<input type="time" name="interview_time" required></label><label>Interviewer name<input name="interviewer" required></label>' : needsEvaluation ? '<label>Interview rating (out of 10)<input type="number" name="interview_rating" min="0" max="10" required></label><label>Interview remarks<textarea name="interview_remarks" rows="3" required></textarea></label>' : needsOffer ? '<label>Offer release date<input type="date" name="offer_date" required></label><label>Offered CTC<input type="number" name="offered_ctc" required></label>' : needsJoining ? '<label>Expected joining date<input type="date" name="joining_date" required></label>' : '<label>Reason for rejection<select name="rejection_reason" required><option value="">Select reason</option><option>High salary expectation</option><option>Lack of skills</option><option>Culture fit</option><option>Notice period</option><option>Other</option></select></label>';
   modal.innerHTML = `<form class="modal stage-update-modal"><button type="button" class="modal-close">×</button><span class="section-kicker">PIPELINE UPDATE</span><h2>${nextStage}</h2><p class="modal-subtitle">${candidate.name} · ${candidate.role}</p>${fields}<label>Next action<input name="next_action" value="${candidate.next_action || ''}" placeholder="e.g. Call candidate for confirmation"></label><label>Next action due date<input type="date" name="next_action_date" value="${candidate.next_action_date || ''}"></label><label>Additional remarks<textarea name="remarks" rows="2">${candidate.remarks || ''}</textarea></label><button class="primary" type="submit">Save stage update</button></form>`;
-  document.body.append(modal);
+  mountModal(modal);
   const close = () => { if (select) select.value = candidate.screening_status || candidate.stage; modal.remove(); };
   modal.querySelector('.modal-close').onclick = close;
   modal.querySelector('form').onsubmit = event => { event.preventDefault(); const values = new FormData(event.target); Object.assign(candidate, Object.fromEntries(values)); if (onSave) onSave(); updateCandidateStage(candidate, nextStage); modal.remove(); };
@@ -1637,7 +1680,7 @@ function openModal(type) {
         </select>
       </label>
       <label>Candidate ID<input value="CAN-${new Date().getFullYear()}-${String(data.candidates.length + 1).padStart(4, '0')}" disabled></label>
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+      <div class="form-grid">
         <label>Candidate Name<input name="name" required></label>
         <label>Gender<select name="gender"><option>Male</option><option>Female</option><option>Other</option></select></label>
         <label>Date of Birth<input type="date" name="dob"></label>
@@ -1646,7 +1689,7 @@ function openModal(type) {
         <label>Marital Status<select name="marital_status"><option>Single</option><option>Married</option><option>Other</option></select></label>
       </div>
       <label>Residential Address<textarea name="address" rows="2"></textarea></label>
-      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+      <div class="form-grid">
         <label>Current Location of Job<input name="location"></label>
         <label>Current Salary (CTC)<input type="number" name="current_ctc"></label>
         <label>Expected Salary<input type="number" name="expected_ctc"></label>
@@ -1664,7 +1707,7 @@ function openModal(type) {
 
     modal.innerHTML = `<form class="modal"><button type="button" class="modal-close">×</button><span class="section-kicker">NEW RECORD</span><h2>${vacancy ? 'Create vacancy' : 'Add candidate'}</h2>${vacancy ? vacancyHtml : candidateHtml}<button class="primary" type="submit">Save record</button></form>`;
     
-    document.body.append(modal);
+    mountModal(modal);
     modal.querySelector('.modal-close').onclick = () => modal.remove();
     modal.querySelector('form').onsubmit = async event => {
       event.preventDefault();
