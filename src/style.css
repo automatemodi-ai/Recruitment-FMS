@@ -640,3 +640,221 @@ td { overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* Candidate Bulk Upload Modal & Components */
+.bulk-modal {
+  width: min(940px, 96vw) !important;
+  max-height: 90vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+}
+.bulk-modal-header {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+.bulk-modal-header h2 {
+  font-size: 22px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bulk-modal-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.bulk-templates-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  background: #f4f8f6;
+  border: 1px solid #d7ebe1;
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+.bulk-templates-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bulk-templates-info strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+.bulk-templates-info span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.bulk-templates-btns {
+  display: flex;
+  gap: 8px;
+}
+.template-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid #c2ded3;
+  color: var(--green);
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.template-btn:hover {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+.bulk-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.bulk-config-grid label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.bulk-config-grid select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 12px;
+  background: #fff;
+}
+.bulk-dropzone {
+  border: 2px dashed #b8d4c9;
+  border-radius: 8px;
+  padding: 24px 20px;
+  text-align: center;
+  background: #fafcfb;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+.bulk-dropzone:hover, .bulk-dropzone.dragover {
+  border-color: var(--green);
+  background: #f0f7f4;
+}
+.bulk-dropzone-icon {
+  font-size: 32px;
+  margin-bottom: 6px;
+}
+.bulk-dropzone strong {
+  display: block;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.bulk-dropzone span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+.bulk-dropzone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.file-selected-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #e3f3ec;
+  color: var(--green);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.bulk-stats-summary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 8px 0;
+}
+.bulk-stat-chip {
+  padding: 4px 10px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bulk-stat-chip.total { background: #edf2ef; color: #445650; }
+.bulk-stat-chip.valid { background: #e0f4eb; color: #1e6c56; }
+.bulk-stat-chip.invalid { background: #fbeee8; color: #b24637; }
+.bulk-preview-wrapper {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.bulk-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.bulk-preview-table th {
+  position: sticky;
+  top: 0;
+  background: #f6faf8;
+  z-index: 1;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  text-align: left;
+}
+.bulk-preview-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #edf1ef;
+  white-space: nowrap;
+}
+.bulk-status-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.bulk-status-badge.ok { background: #dff2e9; color: #1e6c56; }
+.bulk-status-badge.warn { background: #fdf3e5; color: #a2651b; }
+.bulk-status-badge.err { background: #fde8e5; color: #b83c2e; }
+.bulk-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  margin-top: auto;
+}
+.bulk-upload-btn {
+  background: #fff;
+  border: 1px solid #b7d6ca;
+  color: var(--green);
+  font-weight: 700;
+}
+.bulk-upload-btn:hover {
+  background: #eef6f3;
+  border-color: var(--green);
+}

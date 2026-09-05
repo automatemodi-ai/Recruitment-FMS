@@ -246,6 +246,86 @@ router.post('/candidates', upload.single('cv'), async (req, res) => {
   }
 });
 
+// 5.1 Bulk Create / Import Candidates
+router.post('/candidates/bulk', async (req, res) => {
+  try {
+    const { candidates } = req.body;
+    if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+      return res.status(400).json({ error: 'No candidates provided for bulk import' });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const existingCandidates = await Candidate.find({ id: new RegExp(`^CAN-${currentYear}-`) }, { id: 1 }).lean();
+    let maxIdNum = 0;
+    for (const c of existingCandidates) {
+      if (c.id) {
+        const parts = c.id.split('-');
+        if (parts.length >= 3) {
+          const num = parseInt(parts[2], 10);
+          if (!isNaN(num) && num > maxIdNum) maxIdNum = num;
+        }
+      }
+    }
+
+    const savedCandidates = [];
+    const vacancyCountMap = {};
+
+    for (const rawCandidate of candidates) {
+      const candidateData = { ...rawCandidate };
+      if (!candidateData.name || !candidateData.phone) continue;
+
+      if (!candidateData.id) {
+        maxIdNum++;
+        candidateData.id = `CAN-${currentYear}-${String(maxIdNum).padStart(4, '0')}`;
+      }
+
+      const defaultStage = candidateData.stage || 'Application Received (New)';
+      ensureInitialStageTimeline(candidateData, defaultStage);
+
+      if (!candidateData.requirement_id) {
+        candidateData.requirement_id = 'GENERAL';
+      }
+      if (!candidateData.role) {
+        candidateData.role = 'Not Specified';
+      }
+      if (!candidateData.source) {
+        candidateData.source = 'Bulk Import';
+      }
+      if (!candidateData.screening_status) {
+        candidateData.screening_status = defaultStage === 'CV Screened & Shortlisted' ? 'Shortlisted' : 'Pending Review';
+      }
+
+      const saved = await Candidate.findOneAndUpdate(
+        { id: candidateData.id },
+        candidateData,
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      savedCandidates.push(saved);
+
+      if (candidateData.requirement_id && candidateData.requirement_id !== 'GENERAL') {
+        vacancyCountMap[candidateData.requirement_id] = (vacancyCountMap[candidateData.requirement_id] || 0) + 1;
+      }
+    }
+
+    // Increment vacancy application counts
+    for (const [reqId, count] of Object.entries(vacancyCountMap)) {
+      await Vacancy.findOneAndUpdate(
+        { id: reqId },
+        { $inc: { applications: count } }
+      );
+    }
+
+    res.json({
+      message: `Successfully imported ${savedCandidates.length} candidate(s)`,
+      count: savedCandidates.length,
+      candidates: savedCandidates
+    });
+  } catch (error) {
+    console.error('Error in bulk candidate import:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 6. Auth - Login
 router.post('/auth/login', async (req, res) => {
   try {

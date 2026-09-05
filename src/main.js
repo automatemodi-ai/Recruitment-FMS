@@ -1,10 +1,12 @@
 import './style.css'
 import { setupNavigation } from './navigation.js'
 import { prepareTables, revealActiveTabs, mountModal } from './responsive.js'
+import * as XLSX from 'xlsx'
 
 let navigationUI;
 
-const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5173' ? 'http://localhost:3000' : '';
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_BASE = isLocalhost ? 'http://localhost:3000' : '';
 
 const positions = ["Executive Assistant","Process Coordinator","Business Operations Intern","Production Planner / Order Manager","Sales Executive - Retail","Sales Executive - Project Sales","Sales Manager","Sales Coordinator","CRM Executive","Showroom Receptionist","Furniture Designer","AutoCAD Draftsman","SolidWorks Draftsman","Design Manager","Production Drawing Designer","Product Development Designer","Finance & Accounts Manager","Senior Accountant","Accounts Executive","Accountant & Cashier","Cost Analyst","HR Manager","Recruitment Executive","Back Office Executive","Data Entry Operator","Office Assistant","Inventory Manager","Inventory Executive","Warehouse In-Charge","Storekeeper","Material Inward Supervisor","Purchase Manager","Purchase Executive","Vendor Development Executive","MIS Executive","IT Support Executive","AI Automation Engineer","Marketing Manager","Marketing Executive","Digital Marketing Executive","Graphic Designer","Production Head","Production Manager - Wooden","Production Supervisor - Wooden","Production Manager - Metal","Production Supervisor - Metal","Production Supervisor - Chair","QC Executive","Dispatch Supervisor","Logistics Coordinator","Project Manager","Project Coordinator","Site Supervisor","Maintenance Executive","Electrical Technician","Hotel Manager","Hotel Operations Supervisor","Front Office Manager","Front Office Executive","Hotel Receptionist","Guest Service Executive","Housekeeping Supervisor","Housekeeping Staff","F&B Manager","Restaurant Supervisor","Chef"];
 const departments = ["Admin & Back Office","Design & Engineering","Finance & Accounts","Human Resources","Inventory Management","IT & Automation","Marketing","MDO","Operations","Production","Projects & Installation","Sales & CRM","Front Office - Hotel","Maintenance","Hotel Operations / Front Office","Housekeeping","Food & Beverage"];
@@ -118,9 +120,20 @@ function renderLogin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      const resJson = await res.json();
+      const responseText = await res.text();
+      let resJson = {};
+      if (responseText.trim()) {
+        try {
+          resJson = JSON.parse(responseText);
+        } catch {
+          throw new Error(`Login service returned an invalid response (HTTP ${res.status})`);
+        }
+      }
       if (!res.ok) {
-        throw new Error(resJson.error || 'Invalid email or password');
+        throw new Error(resJson.error || `Login failed (HTTP ${res.status})`);
+      }
+      if (!resJson.user) {
+        throw new Error('Login service returned an incomplete response');
       }
 
       currentUser = resJson.user;
@@ -175,6 +188,7 @@ function initApp() {
         </div>
         <div class="top-actions">
           <a class="candidate-form-link" href="/apply.html" target="_blank" rel="noopener">Open Candidate Form ↗</a>
+          <button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate" title="Bulk Import Candidates from Excel or CSV">📥 Bulk Upload</button>
           <button class="primary" data-action="new-candidate">+ Add Candidate</button>
           <div class="user-profile-bar">
             <div class="user-badge" title="${escapeHtml(currentUser.email || '')}">
@@ -257,7 +271,11 @@ const normalizeVacancy = vacancy => {
 
 function fetchData() {
   fetch(`${API_BASE}/api/data`)
-    .then(res => res.json())
+    .then(async res => {
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+      const text = await res.text();
+      return text ? JSON.parse(text) : { vacancies: [], candidates: [] };
+    })
     .then(resData => {
       data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
       render();
@@ -958,7 +976,7 @@ function candidates(list) {
   if (activeView === 'CV Screening') {
     const rows = filters.screening.screening_status ? list : list.filter(x => x.screening_status === 'Pending Review' || x.screening_status === 'Hold' || !x.screening_status);
     const screeningSummary = filters.screening.screening_status ? `${rows.length} ${filters.screening.screening_status} application${rows.length === 1 ? '' : 's'}` : `${rows.length} applications pending review`;
-    return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><button class="primary" data-action="new-candidate">+ Add application</button></div>
+    return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add application</button></div></div>
     ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true, screeningStatus: true })}
     <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
@@ -991,7 +1009,7 @@ function candidates(list) {
       }).join('')}
     </div>`;
 
-    return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${shortlisted.length} shortlisted candidates</p></div></div>
+    return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${shortlisted.length} shortlisted candidates</p></div><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button></div>
     ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true })}
     ${tabsHtml}
     <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
@@ -1576,6 +1594,7 @@ function bindEvents() {
   });
   document.querySelectorAll('[data-action="new-vacancy"]').forEach(button => button.onclick = () => openModal('vacancy'));
   document.querySelectorAll('[data-action="new-candidate"]').forEach(button => button.onclick = () => openModal('candidate'));
+  document.querySelectorAll('[data-action="bulk-candidate"]').forEach(button => button.onclick = () => openBulkCandidateModal());
   document.querySelectorAll('[data-action="view-candidate"]').forEach(button => button.onclick = () => openCandidateDetails(button.dataset.id));
   document.querySelectorAll('[data-action="new-user"]').forEach(button => button.onclick = () => openAddUserModal());
   document.querySelectorAll('.delete-user-btn').forEach(button => button.onclick = () => deleteUser(button.dataset.id, button.dataset.name));
@@ -1705,10 +1724,24 @@ function openModal(type) {
 
     const vacancyHtml = `<label>Date of Opening<input value="${new Date().toISOString().split('T')[0]}" disabled></label><label>Position Code<input placeholder="(Autofill)" disabled></label><label>Job Title<select name="title">${positions.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Department<select name="department">${departments.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Location<select name="location">${locations.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Priority<select name="priority">${priorities.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Job Description<input type="file" name="jd" accept=".pdf,.doc,.docx"></label><label>Minimum Experience<select name="experience">${experiences.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Salary Range<select name="salary">${salaries.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Deadline<input type="date" name="deadline" required></label><label>Employee Responsible To<select name="owner">${managers.map(p => "<option>" + p + "</option>").join('')}</select></label>`;
 
-    modal.innerHTML = `<form class="modal"><button type="button" class="modal-close">×</button><span class="section-kicker">NEW RECORD</span><h2>${vacancy ? 'Create vacancy' : 'Add candidate'}</h2>${vacancy ? vacancyHtml : candidateHtml}<button class="primary" type="submit">Save record</button></form>`;
+    const candidateTabs = `
+      <div class="modal-mode-tabs" style="display:flex; gap:8px; margin: 4px 0 14px; background:#edf3f0; padding:4px; border-radius:6px;">
+        <button type="button" class="modal-mode-btn" style="flex:1; padding:8px 12px; border:none; background:#fff; color:var(--green); font-weight:700; border-radius:4px; cursor:default; font-size:12px; box-shadow:0 1px 2px rgba(0,0,0,0.05);">👤 Single Candidate Form</button>
+        <button type="button" class="modal-mode-btn" id="modal-switch-to-bulk" style="flex:1; padding:8px 12px; border:none; background:transparent; color:#64766e; font-weight:600; border-radius:4px; cursor:pointer; font-size:12px; display:flex; align-items:center; justify-content:center; gap:6px;">📥 Bulk Upload (Excel/CSV)</button>
+      </div>
+    `;
+
+    modal.innerHTML = `<form class="modal"><button type="button" class="modal-close">×</button><span class="section-kicker">NEW RECORD</span><h2>${vacancy ? 'Create vacancy' : 'Add candidate'}</h2>${vacancy ? '' : candidateTabs}${vacancy ? vacancyHtml : candidateHtml}<button class="primary" type="submit">Save record</button></form>`;
     
     mountModal(modal);
     modal.querySelector('.modal-close').onclick = () => modal.remove();
+    const bulkSwitchBtn = modal.querySelector('#modal-switch-to-bulk');
+    if (bulkSwitchBtn) {
+      bulkSwitchBtn.onclick = () => {
+        modal.remove();
+        openBulkCandidateModal();
+      };
+    }
     modal.querySelector('form').onsubmit = async event => {
       event.preventDefault();
       const submitBtn = event.target.querySelector('button[type="submit"]');
@@ -1809,6 +1842,517 @@ function openModal(type) {
       render();
     };
   }
+
+function downloadCandidateTemplate(format = 'xlsx') {
+  const openVacancies = (data.vacancies || []).filter(v => v.status === 'Open');
+  const defaultVacancy = openVacancies[0] || {};
+  const secondVacancy = openVacancies[1] || defaultVacancy;
+
+  const sampleData = [
+    {
+      "Candidate Name": "Rahul Sharma",
+      "Mobile Number": "9876543210",
+      "Email ID": "rahul.sharma@example.com",
+      "Vacancy ID": defaultVacancy.id || "OP-PC-01",
+      "Role / Job Title": defaultVacancy.title || "Production Planner / Order Manager",
+      "Total Experience": "3 Years",
+      "Current CTC": "25000",
+      "Expected CTC": "30000",
+      "Notice Period": "15 Days",
+      "Location": "Jaipur",
+      "Top Skills": "AutoCAD, MS Excel, Production",
+      "Source": "Naukri",
+      "Gender": "Male",
+      "Marital Status": "Single",
+      "Residential Address": "Civil Lines, Jaipur",
+      "Referred By": "Direct",
+      "Remarks": "Immediate joiner"
+    },
+    {
+      "Candidate Name": "Pooja Verma",
+      "Mobile Number": "9812345678",
+      "Email ID": "pooja.v@example.com",
+      "Vacancy ID": secondVacancy.id || "",
+      "Role / Job Title": secondVacancy.title || "Sales Executive - Retail",
+      "Total Experience": "2 Years",
+      "Current CTC": "20000",
+      "Expected CTC": "26000",
+      "Notice Period": "Immediate",
+      "Location": "Showroom",
+      "Top Skills": "Client Relations, Retail Sales, Communication",
+      "Source": "LinkedIn",
+      "Gender": "Female",
+      "Marital Status": "Single",
+      "Residential Address": "Mansarovar, Jaipur",
+      "Referred By": "Walk-in",
+      "Remarks": "Strong retail sales background"
+    }
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(sampleData);
+  const colWidths = [
+    { wch: 18 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 32 },
+    { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 15 },
+    { wch: 30 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 25 },
+    { wch: 18 }, { wch: 25 }
+  ];
+  worksheet['!cols'] = colWidths;
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Candidates_Template");
+
+  if (format === 'csv') {
+    XLSX.writeFile(workbook, "Modi_Furniture_Candidates_Template.csv", { bookType: 'csv' });
+  } else {
+    XLSX.writeFile(workbook, "Modi_Furniture_Candidates_Template.xlsx", { bookType: 'xlsx' });
+  }
+}
+
+function openBulkCandidateModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop';
+
+  const openVacancies = (data.vacancies || []).filter(v => v.status === 'Open');
+
+  modal.innerHTML = `
+    <div class="modal bulk-modal">
+      <button type="button" class="modal-close" id="bulk-close-top" aria-label="Close modal">×</button>
+      
+      <div class="bulk-modal-header">
+        <span class="section-kicker">TALENT IMPORT ENGINE</span>
+        <h2>📥 Bulk Import Candidates</h2>
+        <p>Import candidate applications in bulk via Excel (.xlsx, .xls) or CSV (.csv) spreadsheet.</p>
+      </div>
+
+      <div class="modal-mode-tabs" style="display:flex; gap:8px; margin: 0 0 10px; background:#edf3f0; padding:4px; border-radius:6px;">
+        <button type="button" class="modal-mode-btn" id="modal-switch-to-single" style="flex:1; padding:8px 12px; border:none; background:transparent; color:#64766e; font-weight:600; border-radius:4px; cursor:pointer; font-size:12px;">👤 Single Candidate Form</button>
+        <button type="button" class="modal-mode-btn" style="flex:1; padding:8px 12px; border:none; background:#fff; color:var(--green); font-weight:700; border-radius:4px; cursor:default; font-size:12px; box-shadow:0 1px 2px rgba(0,0,0,0.05); display:flex; align-items:center; justify-content:center; gap:6px;">📥 Bulk Upload (Excel/CSV)</button>
+      </div>
+
+      <div class="bulk-templates-row">
+        <div class="bulk-templates-info">
+          <strong>Ready-to-use Sample Templates</strong>
+          <span>Download sample format with pre-configured columns and example candidate rows:</span>
+        </div>
+        <div class="bulk-templates-btns">
+          <button type="button" class="template-btn" id="bulk-dl-xlsx">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Excel Template (.xlsx)
+          </button>
+          <button type="button" class="template-btn" id="bulk-dl-csv">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            CSV Template (.csv)
+          </button>
+        </div>
+      </div>
+
+      <div class="bulk-config-grid">
+        <label>
+          Target Vacancy (Default Link)
+          <select id="bulk-vacancy-select">
+            <option value="">-- Use Vacancy from File (or General) --</option>
+            ${openVacancies.map(v => `<option value="${escapeHtml(v.id)}">${escapeHtml(v.id)} - ${escapeHtml(v.title)} (${escapeHtml(v.department)})</option>`).join('')}
+          </select>
+        </label>
+        <label>
+          Intake Stage
+          <select id="bulk-stage-select">
+            <option value="Application Received (New)" selected>Application Received (New) - CV Screening</option>
+            <option value="CV Screened & Shortlisted">CV Screened & Shortlisted - Active Pipeline</option>
+          </select>
+        </label>
+        <label>
+          Default Source (If blank in sheet)
+          <select id="bulk-source-select">
+            <option value="Bulk Import" selected>Bulk Import</option>
+            <option value="Naukri">Naukri</option>
+            <option value="LinkedIn">LinkedIn</option>
+            <option value="Indeed">Indeed</option>
+            <option value="Apna">Apna</option>
+            <option value="Consultant">Consultant</option>
+            <option value="Walk-in">Walk-in</option>
+            <option value="Referral">Referral</option>
+            <option value="Direct">Direct</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="bulk-dropzone" id="bulk-dropzone">
+        <input type="file" id="bulk-file-input" accept=".xlsx,.xls,.csv" />
+        <div class="bulk-dropzone-icon">📁</div>
+        <strong id="bulk-dropzone-title">Click to browse or Drag & Drop Excel / CSV file here</strong>
+        <span id="bulk-dropzone-hint">Supports .xlsx, .xls, and .csv formats</span>
+        <div id="bulk-file-info" class="file-selected-pill" style="display:none;"></div>
+      </div>
+
+      <div id="bulk-preview-section" style="display:none;">
+        <div class="bulk-stats-summary">
+          <span class="bulk-stat-chip total" id="bulk-total-count">Total: 0</span>
+          <span class="bulk-stat-chip valid" id="bulk-valid-count">✓ Ready: 0</span>
+          <span class="bulk-stat-chip invalid" id="bulk-invalid-count" style="display:none;">⚠ Issues: 0</span>
+          <label style="margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; text-transform:none; color:var(--ink);">
+            <input type="checkbox" id="bulk-skip-invalid" checked style="width:auto; min-height:auto;">
+            Skip invalid rows (missing Name or Phone)
+          </label>
+        </div>
+
+        <div class="bulk-preview-wrapper">
+          <table class="bulk-preview-table">
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Candidate Name</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th>Role / Vacancy</th>
+                <th>Experience</th>
+                <th>Expected CTC</th>
+                <th>Current CTC</th>
+                <th>Notice Period</th>
+                <th>Source</th>
+                <th>Location</th>
+              </tr>
+            </thead>
+            <tbody id="bulk-preview-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="bulk-footer">
+        <button type="button" class="secondary" id="bulk-cancel-btn">Cancel</button>
+        <button type="button" class="primary" id="bulk-submit-btn" disabled>Import Candidates</button>
+      </div>
+    </div>
+  `;
+
+  mountModal(modal);
+
+  // Bind template downloads
+  modal.querySelector('#bulk-dl-xlsx').onclick = () => downloadCandidateTemplate('xlsx');
+  modal.querySelector('#bulk-dl-csv').onclick = () => downloadCandidateTemplate('csv');
+
+  const singleSwitchBtn = modal.querySelector('#modal-switch-to-single');
+  if (singleSwitchBtn) {
+    singleSwitchBtn.onclick = () => {
+      modal.remove();
+      openModal('candidate');
+    };
+  }
+
+  // Close handlers
+  const closeModal = () => modal.remove();
+  modal.querySelector('#bulk-close-top').onclick = closeModal;
+  modal.querySelector('#bulk-cancel-btn').onclick = closeModal;
+
+  let parsedRows = [];
+
+  const fileInput = modal.querySelector('#bulk-file-input');
+  const dropzone = modal.querySelector('#bulk-dropzone');
+  const fileInfo = modal.querySelector('#bulk-file-info');
+  const dropzoneTitle = modal.querySelector('#bulk-dropzone-title');
+  const dropzoneHint = modal.querySelector('#bulk-dropzone-hint');
+  const previewSection = modal.querySelector('#bulk-preview-section');
+  const previewTbody = modal.querySelector('#bulk-preview-tbody');
+  const totalCountEl = modal.querySelector('#bulk-total-count');
+  const validCountEl = modal.querySelector('#bulk-valid-count');
+  const invalidCountEl = modal.querySelector('#bulk-invalid-count');
+  const submitBtn = modal.querySelector('#bulk-submit-btn');
+  const skipInvalidCheckbox = modal.querySelector('#bulk-skip-invalid');
+
+  // Drag & drop highlight
+  ['dragenter', 'dragover'].forEach(name => {
+    dropzone.addEventListener(name, e => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach(name => {
+    dropzone.addEventListener(name, e => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+    });
+  });
+
+  const handleFile = file => {
+    if (!file) return;
+    const fileName = file.name;
+    const fileExt = fileName.split('.').pop().toLowerCase();
+    if (!['xlsx', 'xls', 'csv'].includes(fileExt)) {
+      alert('Please upload a valid Excel (.xlsx, .xls) or CSV (.csv) file.');
+      return;
+    }
+
+    fileInfo.style.display = 'inline-flex';
+    fileInfo.innerHTML = `📄 <b>${escapeHtml(fileName)}</b> (${(file.size / 1024).toFixed(1)} KB)`;
+    dropzoneTitle.textContent = 'File Loaded';
+    dropzoneHint.textContent = 'Click to choose a different file or re-upload';
+
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const dataBuffer = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(dataBuffer, { type: 'array' });
+        const firstSheet = workbook.SheetNames[0];
+        if (!firstSheet) {
+          alert('No sheets found in the uploaded file.');
+          return;
+        }
+        const worksheet = workbook.Sheets[firstSheet];
+        const rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+        if (!rawRows || rawRows.length === 0) {
+          alert('The uploaded file does not contain any data rows.');
+          return;
+        }
+
+        renderParsedData(rawRows);
+      } catch (err) {
+        console.error('File parsing error:', err);
+        alert('Failed to parse file: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  fileInput.addEventListener('change', e => {
+    if (e.target.files && e.target.files[0]) {
+      handleFile(e.target.files[0]);
+    }
+  });
+
+  function renderParsedData(rawRows) {
+    parsedRows = [];
+
+    const normKey = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    for (const raw of rawRows) {
+      const norm = {};
+      let hasAnyValue = false;
+      for (const [k, v] of Object.entries(raw)) {
+        norm[normKey(k)] = typeof v === 'string' ? v.trim() : (v !== null && v !== undefined ? String(v).trim() : '');
+        if (norm[normKey(k)]) hasAnyValue = true;
+      }
+      if (!hasAnyValue) continue;
+
+      const name = norm['fullname'] || norm['candidatename'] || norm['applicantname'] || norm['name'] || norm['person'] || '';
+      let phone = norm['mobilenumber'] || norm['mobile'] || norm['phonenumber'] || norm['phone'] || norm['contactnumber'] || norm['contact'] || norm['cell'] || norm['whatsapp'] || '';
+      if (phone && /^\d+(\.\d+)?e\+\d+$/i.test(phone)) {
+        phone = String(Number(phone));
+      }
+      const email = norm['emailid'] || norm['email'] || norm['mail'] || '';
+      const vacancyId = norm['vacancyid'] || norm['requirementid'] || norm['reqid'] || norm['jobid'] || '';
+      const role = norm['rolejobtitle'] || norm['role'] || norm['jobtitle'] || norm['position'] || norm['appliedrole'] || norm['designation'] || '';
+      const experience = norm['totalexperience'] || norm['experience'] || norm['exp'] || norm['workingexperience'] || norm['workexp'] || norm['experienceyears'] || '';
+      const current_ctc = norm['currentctc'] || norm['currentsalary'] || norm['presentctc'] || norm['currentctcinr'] || '';
+      const expected = norm['expectedctc'] || norm['expectedsalary'] || norm['expected'] || norm['expectedctcinr'] || norm['expctc'] || '';
+      const notice_period = norm['noticeperioddays'] || norm['noticeperiod'] || norm['notice'] || '';
+      const location = norm['locationcity'] || norm['location'] || norm['city'] || norm['currentlocation'] || norm['joblocation'] || '';
+      const skills = norm['topskills'] || norm['skills'] || norm['keyskills'] || norm['skillset'] || '';
+      const source = norm['source'] || norm['platform'] || norm['appliedthrough'] || norm['channel'] || '';
+      const gender = norm['gender'] || norm['sex'] || '';
+      const marital_status = norm['maritalstatus'] || norm['marital'] || '';
+      const address = norm['residentialaddress'] || norm['address'] || norm['currentaddress'] || '';
+      const referrer = norm['referredbyconsultant'] || norm['referredby'] || norm['referrer'] || norm['consultant'] || norm['consultantname'] || norm['reference'] || '';
+      const remarks = norm['remarks'] || norm['notes'] || norm['comments'] || norm['otherinfo'] || norm['information'] || '';
+
+      const cleanPhoneDigits = String(phone).replace(/[^0-9]/g, '');
+      const hasValidName = name && name.length >= 2;
+      const hasValidPhone = cleanPhoneDigits.length >= 6;
+
+      const isValid = hasValidName && hasValidPhone;
+      let statusMsg = 'Ready';
+      let statusClass = 'ok';
+      if (!hasValidName && !hasValidPhone) {
+        statusMsg = 'Missing Name & Phone';
+        statusClass = 'err';
+      } else if (!hasValidName) {
+        statusMsg = 'Missing Name';
+        statusClass = 'err';
+      } else if (!hasValidPhone) {
+        statusMsg = 'Missing Phone';
+        statusClass = 'warn';
+      }
+
+      parsedRows.push({
+        name,
+        phone,
+        email,
+        requirement_id: vacancyId,
+        role,
+        experience,
+        current_ctc,
+        expected,
+        notice_period,
+        location,
+        skills,
+        source,
+        gender,
+        marital_status,
+        address,
+        referrer,
+        remarks,
+        isValid,
+        statusMsg,
+        statusClass
+      });
+    }
+
+    updatePreviewUI();
+  }
+
+  function updatePreviewUI() {
+    previewSection.style.display = 'block';
+
+    const total = parsedRows.length;
+    const validCount = parsedRows.filter(r => r.isValid).length;
+    const invalidCount = total - validCount;
+
+    totalCountEl.textContent = `Total: ${total}`;
+    validCountEl.textContent = `✓ Ready: ${validCount}`;
+    if (invalidCount > 0) {
+      invalidCountEl.style.display = 'inline-flex';
+      invalidCountEl.textContent = `⚠ Issues: ${invalidCount}`;
+    } else {
+      invalidCountEl.style.display = 'none';
+    }
+
+    const rowsToImport = skipInvalidCheckbox.checked ? parsedRows.filter(r => r.isValid) : parsedRows;
+    submitBtn.disabled = rowsToImport.length === 0;
+    submitBtn.textContent = rowsToImport.length > 0 ? `Import ${rowsToImport.length} Candidate(s)` : 'Import Candidates';
+
+    previewTbody.innerHTML = parsedRows.map(r => `
+      <tr style="${!r.isValid ? 'background:#fff9f8;' : ''}">
+        <td><span class="bulk-status-badge ${r.statusClass}">${escapeHtml(r.statusMsg)}</span></td>
+        <td><strong>${escapeHtml(r.name || '(Blank)')}</strong></td>
+        <td>${escapeHtml(r.phone || '(Blank)')}</td>
+        <td>${escapeHtml(r.email || '-')}</td>
+        <td>${escapeHtml(r.role || r.requirement_id || '-')}</td>
+        <td>${escapeHtml(r.experience || '-')}</td>
+        <td>${r.expected ? '₹ ' + escapeHtml(r.expected) : '-'}</td>
+        <td>${r.current_ctc ? '₹ ' + escapeHtml(r.current_ctc) : '-'}</td>
+        <td>${escapeHtml(r.notice_period || '-')}</td>
+        <td>${escapeHtml(r.source || '-')}</td>
+        <td>${escapeHtml(r.location || '-')}</td>
+      </tr>
+    `).join('');
+  }
+
+  skipInvalidCheckbox.addEventListener('change', updatePreviewUI);
+
+  // Submit Handler
+  submitBtn.onclick = async () => {
+    const selectedDefaultVacancy = modal.querySelector('#bulk-vacancy-select').value;
+    const selectedDefaultStage = modal.querySelector('#bulk-stage-select').value;
+    const selectedDefaultSource = modal.querySelector('#bulk-source-select').value;
+
+    const rowsToProcess = skipInvalidCheckbox.checked ? parsedRows.filter(r => r.isValid) : parsedRows;
+    if (rowsToProcess.length === 0) {
+      alert('No valid candidates available to import.');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = `Importing ${rowsToProcess.length} candidates...`;
+
+    const currentYear = new Date().getFullYear();
+    let maxIdNum = 0;
+    (data.candidates || []).forEach(c => {
+      if (c.id && c.id.startsWith(`CAN-${currentYear}-`)) {
+        const parts = c.id.split('-');
+        if (parts.length >= 3) {
+          const num = parseInt(parts[2], 10);
+          if (!isNaN(num) && num > maxIdNum) maxIdNum = num;
+        }
+      }
+    });
+
+    const defaultVacancyObj = (data.vacancies || []).find(v => v.id === selectedDefaultVacancy);
+
+    const candidatesPayload = rowsToProcess.map(row => {
+      maxIdNum++;
+      const id = `CAN-${currentYear}-${String(maxIdNum).padStart(4, '0')}`;
+      const now = nowIso();
+
+      let reqId = row.requirement_id;
+      let role = row.role;
+
+      if (!reqId && selectedDefaultVacancy) {
+        reqId = selectedDefaultVacancy;
+      }
+      if (!role && defaultVacancyObj) {
+        role = defaultVacancyObj.title;
+      } else if (!role && reqId) {
+        const found = (data.vacancies || []).find(v => v.id === reqId);
+        if (found) role = found.title;
+      }
+      if (!role) role = 'Not Specified';
+      if (!reqId) reqId = 'GENERAL';
+
+      const stage = selectedDefaultStage || 'Application Received (New)';
+      const screeningStatus = stage === 'CV Screened & Shortlisted' ? 'Shortlisted' : 'Pending Review';
+      const source = row.source || selectedDefaultSource || 'Bulk Import';
+
+      return {
+        id,
+        requirement_id: reqId,
+        name: row.name,
+        role,
+        phone: row.phone,
+        email: row.email,
+        source,
+        location: row.location,
+        experience: row.experience ? (row.experience.toLowerCase().includes('year') ? row.experience : row.experience + ' Years') : 'Not specified',
+        current_ctc: row.current_ctc || '',
+        expected: row.expected || 'Not specified',
+        notice_period: row.notice_period ? (row.notice_period.toLowerCase().includes('day') ? row.notice_period : row.notice_period + ' Days') : '',
+        skills: row.skills || '',
+        gender: row.gender || '',
+        marital_status: row.marital_status || '',
+        address: row.address || '',
+        referrer: row.referrer || '',
+        remarks: row.remarks || '',
+        stage,
+        screening_status: screeningStatus,
+        timestamp: now,
+        stage_updated_at: now,
+        stage_history: [],
+        stage_timestamps: { [stage]: { entered_at: now } }
+      };
+    });
+
+    try {
+      const response = await fetch(`${API_BASE}/api/candidates/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidates: candidatesPayload })
+      });
+
+      let resJson = {};
+      const responseText = await response.text();
+      try {
+        resJson = responseText ? JSON.parse(responseText) : {};
+      } catch (parseErr) {
+        resJson = { error: responseText || 'Invalid response from server' };
+      }
+
+      if (!response.ok) {
+        throw new Error(resJson.error || `Failed to import candidates (Server status ${response.status})`);
+      }
+
+      alert(`🎉 Successfully imported ${resJson.count || rowsToProcess.length} candidate(s)!`);
+      modal.remove();
+
+      // Refresh data
+      fetchData();
+    } catch (err) {
+      console.error('Import error:', err);
+      alert('Error importing candidates: ' + err.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = `Import ${rowsToProcess.length} Candidate(s)`;
+    }
+  };
+}
 
 
 window.addEventListener('storage', e => { 
