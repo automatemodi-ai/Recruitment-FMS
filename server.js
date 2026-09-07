@@ -15,6 +15,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Cloudinary Configuration
 cloudinary.config({
@@ -33,10 +34,12 @@ const upload = multer({
 const uploadStreamToCloudinary = (fileBuffer, folder, originalname) => {
   return new Promise((resolve, reject) => {
     const cleanName = path.parse(originalname).name.replace(/[^a-zA-Z0-9]/g, '_');
+    const extension = path.extname(originalname).slice(1).toLowerCase();
+    const imageFormats = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff']);
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: folder || 'recruitment_fms',
-        resource_type: 'auto',
+        resource_type: imageFormats.has(extension) ? 'image' : 'raw',
         public_id: `${Date.now()}_${cleanName}`
       },
       (error, result) => {
@@ -45,6 +48,38 @@ const uploadStreamToCloudinary = (fileBuffer, folder, originalname) => {
       }
     );
     stream.end(fileBuffer);
+  });
+};
+
+const getSignedCloudinaryUrl = (sourceUrl) => {
+  const parsed = new URL(sourceUrl);
+  if (parsed.hostname !== 'res.cloudinary.com') {
+    throw new Error('Only Cloudinary document URLs are supported');
+  }
+
+  const parts = parsed.pathname.split('/').filter(Boolean);
+  const uploadIndex = parts.indexOf('upload');
+  if (uploadIndex < 1 || !parts[uploadIndex - 1]) {
+    throw new Error('Invalid Cloudinary document URL');
+  }
+
+  const resourceType = parts[uploadIndex - 1];
+  const deliveryParts = parts.slice(uploadIndex + 1);
+  if (deliveryParts[0]?.startsWith('v')) deliveryParts.shift();
+  const publicPath = deliveryParts.join('/');
+  const extensionIndex = publicPath.lastIndexOf('.');
+  
+  let publicId = publicPath;
+  let format = undefined;
+  if (resourceType !== 'raw' && extensionIndex > 0) {
+    publicId = publicPath.slice(0, extensionIndex);
+    format = publicPath.slice(extensionIndex + 1);
+  }
+
+  return cloudinary.utils.private_download_url(decodeURIComponent(publicId), format, {
+    resource_type: resourceType,
+    type: 'upload',
+    attachment: false
   });
 };
 
@@ -176,15 +211,36 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     const folder = req.body.folder || 'recruitment_fms/files';
     const result = await uploadStreamToCloudinary(req.file.buffer, folder, req.file.originalname);
+    const url = result.secure_url || result.url;
 
     res.json({
-      url: result.secure_url || result.url,
+      url,
+      preview_url: `/api/file?url=${encodeURIComponent(url)}`,
       public_id: result.public_id,
       originalname: req.file.originalname
     });
   } catch (error) {
     console.error('Cloudinary Upload Error:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Stream signed Cloudinary files through the app so restricted assets do not expose a 401 in the browser.
+router.get('/file', async (req, res) => {
+  try {
+    const sourceUrl = String(req.query.url || '');
+    const signedUrl = getSignedCloudinaryUrl(sourceUrl);
+    const fileResponse = await fetch(signedUrl);
+    if (!fileResponse.ok) {
+      return res.status(fileResponse.status).json({ error: 'Document could not be loaded from Cloudinary' });
+    }
+
+    res.setHeader('Content-Type', fileResponse.headers.get('content-type') || 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'inline');
+    res.send(Buffer.from(await fileResponse.arrayBuffer()));
+  } catch (error) {
+    console.error('Document proxy error:', error);
+    res.status(400).json({ error: 'Invalid document URL' });
   }
 });
 

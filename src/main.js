@@ -1632,6 +1632,31 @@ function openCandidateDetails(candidateId) {
   const close = () => modal.remove();
   modal.querySelector('.modal-close').onclick = close;
   modal.querySelector('.profile-close').onclick = close;
+  const documentLink = [...modal.querySelectorAll('a[href]')].find(link => candidate.cv_url && link.href.includes(candidate.cv_url));
+  documentLink?.addEventListener('click', event => {
+    event.preventDefault();
+    openDocumentPreview(candidate.cv_url, `${candidate.name} - CV / Resume`);
+  });
+  modal.onclick = event => { if (event.target === modal) close(); };
+}
+
+function getDocumentPreviewUrl(documentUrl) {
+  if (!documentUrl) return '';
+  if (documentUrl.includes('res.cloudinary.com/')) {
+    return `${API_BASE}/api/file?url=${encodeURIComponent(documentUrl)}`;
+  }
+  return documentUrl;
+}
+
+function openDocumentPreview(documentUrl, documentName) {
+  if (!documentUrl) return;
+  const modal = document.createElement('div');
+  modal.className = 'modal-backdrop document-preview-backdrop';
+  const previewUrl = getDocumentPreviewUrl(documentUrl);
+  modal.innerHTML = `<section class="modal document-preview-modal"><button type="button" class="modal-close" aria-label="Close document preview">X</button><div class="document-preview-head"><div><span class="section-kicker">DOCUMENT PREVIEW</span><h2>${documentName || 'Uploaded document'}</h2></div><a class="secondary document-download" href="${previewUrl}" download>Download</a></div><iframe title="${documentName || 'Uploaded document'}" src="${previewUrl}"></iframe></section>`;
+  mountModal(modal);
+  const close = () => modal.remove();
+  modal.querySelector('.modal-close').onclick = close;
   modal.onclick = event => { if (event.target === modal) close(); };
 }
 
