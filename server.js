@@ -470,6 +470,75 @@ const ensureInitialStageTimeline = (record, fallbackStage) => {
   return record;
 };
 
+// Candidate phone & email normalization and duplicate helpers
+const normalizePhone = (phone) => {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+};
+
+const normalizeEmail = (email) => {
+  if (!email) return '';
+  return String(email).trim().toLowerCase();
+};
+
+const escapeRegex = (str) => {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+const findDuplicateCandidate = async ({ phone, email, excludeId = null }) => {
+  const normPhone = normalizePhone(phone);
+  const normEmail = normalizeEmail(email);
+
+  if (!normPhone && !normEmail) {
+    return null;
+  }
+
+  const conditions = [];
+  if (normPhone && normPhone.length >= 10) {
+    conditions.push({ phone: { $regex: new RegExp(`${escapeRegex(normPhone)}$`) } });
+  }
+  if (normEmail) {
+    conditions.push({ email: { $regex: new RegExp(`^${escapeRegex(normEmail)}$`, 'i') } });
+  }
+
+  if (conditions.length === 0) return null;
+
+  const query = { $or: conditions };
+  if (excludeId) {
+    query.id = { $ne: excludeId };
+  }
+
+  const existingList = await Candidate.find(query).lean();
+  if (!existingList || existingList.length === 0) return null;
+
+  for (const existing of existingList) {
+    const existingNormPhone = normalizePhone(existing.phone);
+    const existingNormEmail = normalizeEmail(existing.email);
+
+    const matchedPhone = Boolean(normPhone && existingNormPhone && normPhone === existingNormPhone);
+    const matchedEmail = Boolean(normEmail && existingNormEmail && normEmail === existingNormEmail);
+
+    if (matchedPhone || matchedEmail) {
+      let field = 'both';
+      if (matchedPhone && !matchedEmail) field = 'phone';
+      else if (!matchedPhone && matchedEmail) field = 'email';
+
+      return {
+        candidate: existing,
+        field,
+        matchedPhone,
+        matchedEmail
+      };
+    }
+  }
+
+  return null;
+};
+
 // Cached MongoDB Atlas Connection for Serverless & Local
 let cachedConnection = null;
 
@@ -564,6 +633,16 @@ router.post('/sync', async (req, res) => {
       for (const c of candidates) {
         if (!c.id) continue;
         ensureInitialStageTimeline(c, 'Application Received (New)');
+        
+        // Prevent creating new records with duplicate phone or email
+        const existingRecord = await Candidate.findOne({ id: c.id }).lean();
+        if (!existingRecord && (c.phone || c.email)) {
+          const duplicate = await findDuplicateCandidate({ phone: c.phone, email: c.email, excludeId: c.id });
+          if (duplicate) {
+            console.warn(`Sync skipped duplicate candidate: ${c.name} (${c.phone} / ${c.email}) matches ${duplicate.candidate.id}`);
+            continue;
+          }
+        }
         await Candidate.findOneAndUpdate({ id: c.id }, c, { upsert: true, new: true, setDefaultsOnInsert: true });
       }
     }
@@ -702,11 +781,155 @@ router.post('/vacancies', upload.single('jd'), async (req, res) => {
   }
 });
 
+// 4.1 Check Duplicate Candidate (by Phone Number or Email)
+router.get('/candidates/check-duplicate', async (req, res) => {
+  try {
+    const { phone, email, excludeId } = req.query;
+    const normPhone = normalizePhone(phone);
+    const normEmail = normalizeEmail(email);
+
+    if (!normPhone && !normEmail) {
+      return res.json({ exists: false });
+    }
+
+    const duplicate = await findDuplicateCandidate({ phone, email, excludeId });
+    if (duplicate) {
+      const fieldDesc = duplicate.field === 'phone' ? 'phone number' : duplicate.field === 'email' ? 'email address' : 'phone number and email address';
+      return res.json({
+        exists: true,
+        duplicateField: duplicate.field,
+        candidateId: duplicate.candidate.id,
+        candidateName: duplicate.candidate.name,
+        appliedDate: duplicate.candidate.timestamp || duplicate.candidate.createdAt,
+        message: `An application has already been submitted with this ${fieldDesc}. Each candidate can only apply once.`
+      });
+    }
+
+    res.json({ exists: false });
+  } catch (error) {
+    console.error('Error checking duplicate candidate:', error);
+    res.status(500).json({ error: 'Failed to verify candidate uniqueness' });
+  }
+});
+
+// 4.2 Public Candidate Job Application Submission Endpoint
+router.post('/apply', upload.single('cv'), async (req, res) => {
+  try {
+    const candidateData = req.body;
+    const name = String(candidateData.name || '').trim();
+    const phone = String(candidateData.phone || '').trim();
+    const email = String(candidateData.email || '').trim();
+    const requirement_id = String(candidateData.requirement_id || '').trim();
+
+    if (!name) {
+      return res.status(400).json({ error: 'Candidate name is required' });
+    }
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number is required' });
+    }
+    if (!email) {
+      return res.status(400).json({ error: 'Email ID is required' });
+    }
+
+    const normPhone = normalizePhone(phone);
+    if (normPhone.length < 10) {
+      return res.status(400).json({ error: 'Please enter a valid 10-digit phone number' });
+    }
+
+    // Check for duplicate phone or email
+    const duplicate = await findDuplicateCandidate({ phone, email });
+    if (duplicate) {
+      const fieldDesc = duplicate.field === 'phone' ? 'phone number' : duplicate.field === 'email' ? 'email address' : 'phone number or email address';
+      return res.status(409).json({
+        error: `An application has already been submitted with this ${fieldDesc}. Each applicant can only submit the form once.`,
+        duplicateField: duplicate.field,
+        candidateId: duplicate.candidate.id
+      });
+    }
+
+    // Upload CV to Cloudinary if provided
+    if (req.file) {
+      const uploadResult = await uploadStreamToCloudinary(req.file.buffer, 'recruitment_fms/cvs', req.file.originalname);
+      candidateData.cv_url = uploadResult.secure_url;
+      candidateData.cv_public_id = uploadResult.public_id;
+    }
+
+    // Generate Unique Candidate ID
+    const currentYear = new Date().getFullYear();
+    const existingCandidates = await Candidate.find({ id: new RegExp(`^CAN-${currentYear}-`) }, { id: 1 }).lean();
+    let maxIdNum = 0;
+    for (const c of existingCandidates) {
+      if (c.id) {
+        const parts = c.id.split('-');
+        if (parts.length >= 3) {
+          const num = parseInt(parts[2], 10);
+          if (!isNaN(num) && num > maxIdNum) maxIdNum = num;
+        }
+      }
+    }
+    candidateData.id = `CAN-${currentYear}-${String(maxIdNum + 1).padStart(4, '0')}`;
+
+    // Resolve vacancy title if role not set
+    let linkedVacancy = null;
+    if (requirement_id) {
+      linkedVacancy = await Vacancy.findOne({ id: requirement_id });
+      if (linkedVacancy && !candidateData.role) {
+        candidateData.role = linkedVacancy.title;
+      }
+    }
+    if (!candidateData.role) {
+      candidateData.role = 'Not Specified';
+    }
+
+    candidateData.stage = 'Application Received (New)';
+    candidateData.screening_status = 'Pending Review';
+    const submittedAt = new Date().toISOString();
+    candidateData.timestamp = submittedAt;
+    ensureInitialStageTimeline(candidateData, 'Application Received (New)');
+
+    const saved = await Candidate.create(candidateData);
+
+    // Increment vacancy applications count
+    if (linkedVacancy) {
+      await Vacancy.findOneAndUpdate({ id: linkedVacancy.id }, { $inc: { applications: 1 } });
+    }
+
+    res.json({
+      message: 'Application submitted successfully',
+      candidate: {
+        id: saved.id,
+        name: saved.name,
+        role: saved.role
+      }
+    });
+  } catch (error) {
+    console.error('Error submitting job application:', error);
+    res.status(500).json({ error: error.message || 'Failed to submit application' });
+  }
+});
+
 // 5. Create / Update Candidate (with CV Upload to Cloudinary)
 router.post('/candidates', upload.single('cv'), async (req, res) => {
   try {
     const candidateData = req.body;
     ensureInitialStageTimeline(candidateData, 'Application Received (New)');
+
+    // Check duplicate phone or email (excluding current candidate ID if updating)
+    if (candidateData.phone || candidateData.email) {
+      const duplicate = await findDuplicateCandidate({
+        phone: candidateData.phone,
+        email: candidateData.email,
+        excludeId: candidateData.id
+      });
+      if (duplicate) {
+        const fieldDesc = duplicate.field === 'phone' ? 'phone number' : duplicate.field === 'email' ? 'email address' : 'phone number or email';
+        return res.status(409).json({
+          error: `A candidate with this ${fieldDesc} already exists in the system (${duplicate.candidate.name} - ${duplicate.candidate.id}).`,
+          duplicateField: duplicate.field,
+          candidateId: duplicate.candidate.id
+        });
+      }
+    }
 
     if (req.file) {
       const uploadResult = await uploadStreamToCloudinary(req.file.buffer, 'recruitment_fms/cvs', req.file.originalname);
@@ -735,7 +958,7 @@ router.post('/candidates', upload.single('cv'), async (req, res) => {
   }
 });
 
-// 5.1 Bulk Create / Import Candidates
+// 5.1 Bulk Create / Import Candidates (with Duplicate Skipping)
 router.post('/candidates/bulk', async (req, res) => {
   try {
     const { candidates } = req.body;
@@ -757,11 +980,55 @@ router.post('/candidates/bulk', async (req, res) => {
     }
 
     const savedCandidates = [];
+    const skippedDuplicates = [];
     const vacancyCountMap = {};
+    const batchSeenPhones = new Set();
+    const batchSeenEmails = new Set();
 
     for (const rawCandidate of candidates) {
       const candidateData = { ...rawCandidate };
       if (!candidateData.name || !candidateData.phone) continue;
+
+      const normPhone = normalizePhone(candidateData.phone);
+      const normEmail = normalizeEmail(candidateData.email);
+
+      // Check within current batch
+      if (normPhone && batchSeenPhones.has(normPhone)) {
+        skippedDuplicates.push({
+          name: candidateData.name,
+          phone: candidateData.phone,
+          email: candidateData.email,
+          reason: 'Duplicate phone in upload file'
+        });
+        continue;
+      }
+      if (normEmail && batchSeenEmails.has(normEmail)) {
+        skippedDuplicates.push({
+          name: candidateData.name,
+          phone: candidateData.phone,
+          email: candidateData.email,
+          reason: 'Duplicate email in upload file'
+        });
+        continue;
+      }
+
+      // Check against database
+      const duplicateInDb = await findDuplicateCandidate({
+        phone: candidateData.phone,
+        email: candidateData.email
+      });
+      if (duplicateInDb) {
+        skippedDuplicates.push({
+          name: candidateData.name,
+          phone: candidateData.phone,
+          email: candidateData.email,
+          reason: `Already exists in database (${duplicateInDb.candidate.id})`
+        });
+        continue;
+      }
+
+      if (normPhone) batchSeenPhones.add(normPhone);
+      if (normEmail) batchSeenEmails.add(normEmail);
 
       if (!candidateData.id) {
         maxIdNum++;
@@ -805,8 +1072,10 @@ router.post('/candidates/bulk', async (req, res) => {
     }
 
     res.json({
-      message: `Successfully imported ${savedCandidates.length} candidate(s)`,
+      message: `Successfully imported ${savedCandidates.length} candidate(s)${skippedDuplicates.length ? ` (${skippedDuplicates.length} duplicate(s) skipped)` : ''}`,
       count: savedCandidates.length,
+      skippedCount: skippedDuplicates.length,
+      skippedDuplicates,
       candidates: savedCandidates
     });
   } catch (error) {

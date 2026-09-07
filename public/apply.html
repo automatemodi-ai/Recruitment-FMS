@@ -176,6 +176,7 @@
       <p>Job Application Form</p>
     </div>
     <form id="job-form">
+      <div id="form-error-banner" style="display:none; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; padding:12px 16px; border-radius:8px; font-size:14px; font-weight:600; margin-bottom:16px; line-height:1.4;"></div>
       
       <label><span>Position Applied for <span class="required-asterisk" aria-hidden="true">*</span></span>
         <select name="requirement_id" id="position-select" required>
@@ -203,10 +204,12 @@
 
       <div class="grid-2">
         <label><span>Phone number <span class="required-asterisk" aria-hidden="true">*</span></span>
-          <input type="tel" name="phone" autocomplete="tel-national" inputmode="numeric" pattern="[0-9]{10}" title="Must be exactly 10 digits" required>
+          <input type="tel" name="phone" id="phone-input" autocomplete="tel-national" inputmode="numeric" pattern="[0-9]{10}" title="Must be exactly 10 digits" required>
+          <span class="field-error" id="phone-error" style="display:none; color:#dc2626; font-size:12px; font-weight:600; margin-top:3px;"></span>
         </label>
         <label><span>Email ID <span class="required-asterisk" aria-hidden="true">*</span></span>
-          <input type="email" name="email" autocomplete="email" required>
+          <input type="email" name="email" id="email-input" autocomplete="email" required>
+          <span class="field-error" id="email-error" style="display:none; color:#dc2626; font-size:12px; font-weight:600; margin-top:3px;"></span>
         </label>
       </div>
 
@@ -289,25 +292,110 @@
   <script>
     const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5173' ? 'http://localhost:3000' : '';
     document.getElementById('dob').max = new Date().toISOString().split('T')[0];
-    document.getElementById('cv-upload').addEventListener('change', function() { if (this.files[0] && this.files[0].size > 5 * 1024 * 1024) { alert("File size exceeds 5MB limit."); this.value = ""; } });
+    document.getElementById('cv-upload').addEventListener('change', function() {
+      if (this.files[0] && this.files[0].size > 5 * 1024 * 1024) {
+        alert("File size exceeds 5MB limit.");
+        this.value = "";
+      }
+    });
 
-    let storedData = { vacancies: [], candidates: [] };
     const posSelect = document.getElementById('position-select');
+    const phoneInput = document.getElementById('phone-input');
+    const emailInput = document.getElementById('email-input');
+    const phoneError = document.getElementById('phone-error');
+    const emailError = document.getElementById('email-error');
+    const errorBanner = document.getElementById('form-error-banner');
 
-    // Fetch data from backend
+    // Fetch open vacancies for position dropdown
     fetch(`${API_BASE}/api/data`)
       .then(res => res.json())
       .then(data => {
-        storedData = data;
-        if (storedData.vacancies) {
-          storedData.vacancies.filter(v => v.status === 'Open').forEach(v => {
+        if (data.vacancies) {
+          data.vacancies.filter(v => v.status === 'Open').forEach(v => {
             const opt = document.createElement('option');
             opt.value = v.id;
             opt.textContent = v.title;
             posSelect.appendChild(opt);
           });
         }
+      })
+      .catch(err => console.error('Failed to load positions:', err));
+
+    // Real-time duplicate check for phone and email
+    let phoneHasDuplicate = false;
+    let emailHasDuplicate = false;
+
+    async function checkDuplicateField(type) {
+      const phoneDigits = phoneInput ? phoneInput.value.replace(/\D/g, '') : '';
+      const emailVal = emailInput ? emailInput.value.trim().toLowerCase() : '';
+
+      if (type === 'phone') {
+        if (phoneDigits.length === 10) {
+          try {
+            const res = await fetch(`${API_BASE}/api/candidates/check-duplicate?phone=${encodeURIComponent(phoneDigits)}`);
+            const data = await res.json();
+            if (data.exists) {
+              phoneHasDuplicate = true;
+              phoneError.textContent = '❌ An application has already been submitted with this phone number. You can only apply once.';
+              phoneError.style.display = 'block';
+              phoneInput.style.borderColor = '#dc2626';
+            } else {
+              phoneHasDuplicate = false;
+              phoneError.style.display = 'none';
+              phoneInput.style.borderColor = '';
+            }
+          } catch (e) {
+            console.warn('Phone check error:', e);
+          }
+        } else {
+          phoneHasDuplicate = false;
+          phoneError.style.display = 'none';
+          phoneInput.style.borderColor = '';
+        }
+      }
+
+      if (type === 'email') {
+        if (emailVal.length >= 5 && emailVal.includes('@') && emailVal.includes('.')) {
+          try {
+            const res = await fetch(`${API_BASE}/api/candidates/check-duplicate?email=${encodeURIComponent(emailVal)}`);
+            const data = await res.json();
+            if (data.exists) {
+              emailHasDuplicate = true;
+              emailError.textContent = '❌ An application has already been submitted with this email address. You can only apply once.';
+              emailError.style.display = 'block';
+              emailInput.style.borderColor = '#dc2626';
+            } else {
+              emailHasDuplicate = false;
+              emailError.style.display = 'none';
+              emailInput.style.borderColor = '';
+            }
+          } catch (e) {
+            console.warn('Email check error:', e);
+          }
+        } else {
+          emailHasDuplicate = false;
+          emailError.style.display = 'none';
+          emailInput.style.borderColor = '';
+        }
+      }
+    }
+
+    if (phoneInput) {
+      phoneInput.addEventListener('input', () => {
+        if (phoneInput.value.replace(/\D/g, '').length === 10) {
+          checkDuplicateField('phone');
+        } else {
+          phoneError.style.display = 'none';
+          phoneInput.style.borderColor = '';
+          phoneHasDuplicate = false;
+        }
       });
+      phoneInput.addEventListener('blur', () => checkDuplicateField('phone'));
+    }
+
+    if (emailInput) {
+      emailInput.addEventListener('blur', () => checkDuplicateField('email'));
+    }
 
     // Submit Form
     document.getElementById('job-form').addEventListener('submit', async function(e) {
@@ -316,85 +404,74 @@
       const submitBtn = e.target.querySelector('button[type="submit"]');
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Submitting Application...';
+        submitBtn.textContent = 'Verifying & Submitting...';
       }
+      errorBanner.style.display = 'none';
 
       const formData = new FormData(e.target);
-      const reqId = formData.get('requirement_id');
-      const linkedVacancy = storedData.vacancies.find(v => v.id === reqId);
-      
-      const phone = formData.get('phone');
-      if (storedData.candidates.find(c => c.phone === phone)) {
-        if (!confirm('You have already submitted an application with this phone number. Do you want to submit again?')) {
-          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Application'; }
+      const phoneDigits = formData.get('phone') ? formData.get('phone').replace(/\D/g, '') : '';
+      const emailTrimmed = formData.get('email') ? formData.get('email').trim() : '';
+
+      // Strict Pre-Submission Duplicate Verification
+      try {
+        const dupRes = await fetch(`${API_BASE}/api/candidates/check-duplicate?phone=${encodeURIComponent(phoneDigits)}&email=${encodeURIComponent(emailTrimmed)}`);
+        const dupData = await dupRes.json();
+        if (dupData.exists) {
+          const fieldName = dupData.duplicateField === 'phone'
+            ? 'phone number'
+            : dupData.duplicateField === 'email'
+            ? 'email address'
+            : 'phone number or email address';
+
+          errorBanner.innerHTML = `⚠️ <b>Application Blocked:</b> An application has already been submitted with this <b>${fieldName}</b>. Each applicant can only submit the form once.`;
+          errorBanner.style.display = 'block';
+          errorBanner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Application';
+          }
           return;
         }
+      } catch (checkErr) {
+        console.warn('Pre-submission check failed, proceeding to server validation:', checkErr);
       }
 
-      let cv_url = '';
-      const cvFile = formData.get('cv');
-      if (cvFile && cvFile.name && cvFile.size > 0) {
-        const uploadData = new FormData();
-        uploadData.append('file', cvFile);
-        uploadData.append('folder', 'recruitment_fms/cvs');
-        try {
-          const uploadRes = await fetch(`${API_BASE}/api/upload`, {
-            method: 'POST',
-            body: uploadData
-          });
-          const uploadJson = await uploadRes.json();
-          if (uploadJson.url) cv_url = uploadJson.url;
-        } catch (err) {
-          console.error('CV Upload Error:', err);
+      // Submit to dedicated /api/apply endpoint with file upload
+      try {
+        if (submitBtn) submitBtn.textContent = 'Uploading & Submitting...';
+        const response = await fetch(`${API_BASE}/api/apply`, {
+          method: 'POST',
+          body: formData
+        });
+        const resJson = await response.json();
+
+        if (response.status === 409) {
+          errorBanner.innerHTML = `⚠️ <b>Submission Blocked:</b> ${resJson.error || 'A candidate with this phone number or email already exists.'}`;
+          errorBanner.style.display = 'block';
+          errorBanner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Application';
+          }
+          return;
         }
-      }
-      
-      const submittedAt = new Date().toISOString();
-      const newCandidate = {
-        id: 'CAN-' + new Date().getFullYear() + '-' + String(storedData.candidates.length + 1).padStart(4, '0'),
-        requirement_id: reqId,
-        name: formData.get('name'),
-        role: linkedVacancy ? linkedVacancy.title : 'Not Specified',
-        phone: phone,
-        email: formData.get('email'),
-        source: formData.get('source') || 'Direct',
-        location: formData.get('location'),
-        experience: formData.get('experience'),
-        expected: formData.get('expected_ctc') || 'Not specified',
-        stage: 'Application Received (New)',
-        screening_status: 'Pending Review',
-        remarks: formData.get('remarks') || '',
-        skills: formData.get('skills'),
-        gender: formData.get('gender'),
-        dob: formData.get('dob'),
-        marital_status: formData.get('marital_status'),
-        address: formData.get('address'),
-        notice_period: formData.get('notice_period') ? formData.get('notice_period') + ' Days' : '',
-        cv_url: cv_url,
-        timestamp: submittedAt,
-        stage_updated_at: submittedAt,
-        stage_history: [],
-        stage_timestamps: { 'Application Received (New)': { entered_at: submittedAt } }
-      };
-      
-      storedData.candidates.unshift(newCandidate);
-      if (linkedVacancy) {
-        linkedVacancy.applications = (linkedVacancy.applications || 0) + 1;
-      }
-      
-      // Sync to backend MongoDB Atlas
-      fetch(`${API_BASE}/api/sync`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(storedData)
-      }).then(() => {
+
+        if (!response.ok) {
+          throw new Error(resJson.error || 'Failed to submit application');
+        }
+
         document.getElementById('job-form').style.display = 'none';
         document.getElementById('success-msg').style.display = 'block';
-      }).catch(err => {
-        console.error('Sync failed:', err);
-        alert('Failed to submit application. Please try again.');
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Submit Application'; }
-      });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (err) {
+        console.error('Submission failed:', err);
+        errorBanner.textContent = 'Error: ' + err.message;
+        errorBanner.style.display = 'block';
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Submit Application';
+        }
+      }
     });
 
   </script>

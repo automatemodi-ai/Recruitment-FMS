@@ -367,6 +367,18 @@ const candidateDateOptions = [
 ];
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const normalizePhone = phone => {
+  if (!phone) return '';
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  if (digits.length >= 10) return digits.slice(-10);
+  return digits;
+};
+const normalizeEmail = email => {
+  if (!email) return '';
+  return String(email).trim().toLowerCase();
+};
 const uniqueValues = values => [...new Set(values.filter(value => value !== undefined && value !== null && String(value).trim() !== '').map(value => String(value).trim()))].sort((a, b) => a.localeCompare(b));
 const sameFilterValue = (actual, expected) => String(actual ?? '').trim().toLowerCase() === String(expected ?? '').trim().toLowerCase();
 const linkedVacancy = candidate => data.vacancies.find(vacancy => sameFilterValue(vacancy.id, candidate.requirement_id) || sameFilterValue(vacancy.title, candidate.role)) || {};
@@ -1839,6 +1851,30 @@ function openModal(type) {
         activeVacancyStage = 'Manpower Requirement Raised';
       } else {
         const reqId = form.get('requirement_id');
+        const phone = form.get('phone');
+        const email = form.get('email');
+        const normPhone = normalizePhone(phone);
+        const normEmail = normalizeEmail(email);
+
+        const existingCandidate = data.candidates.find(c => {
+          const cPhone = normalizePhone(c.phone);
+          const cEmail = normalizeEmail(c.email);
+          const phoneMatch = normPhone && cPhone && normPhone === cPhone;
+          const emailMatch = normEmail && cEmail && normEmail === cEmail;
+          return phoneMatch || emailMatch;
+        });
+
+        if (existingCandidate) {
+          const cPhone = normalizePhone(existingCandidate.phone);
+          const isPhone = normPhone && cPhone && normPhone === cPhone;
+          alert(`Duplicate Application Blocked:\n\nA candidate with this ${isPhone ? 'Phone Number (' + existingCandidate.phone + ')' : 'Email ID (' + (existingCandidate.email || 'N/A') + ')'} already exists in the system!\n\nExisting Record:\n• Name: ${existingCandidate.name}\n• ID: ${existingCandidate.id}\n• Stage: ${existingCandidate.stage || 'CV Screening'}\n• Role: ${existingCandidate.role || 'Not Specified'}`);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save record';
+          }
+          return;
+        }
+
         const linkedVacancy = data.vacancies.find(v => v.id === reqId);
         let cv_url = '';
         const cvFile = form.get('cv');
@@ -2171,6 +2207,8 @@ function openBulkCandidateModal() {
     parsedRows = [];
 
     const normKey = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const seenPhonesInSheet = new Set();
+    const seenEmailsInSheet = new Set();
 
     for (const raw of rawRows) {
       const norm = {};
@@ -2202,23 +2240,47 @@ function openBulkCandidateModal() {
       const referrer = norm['referredbyconsultant'] || norm['referredby'] || norm['referrer'] || norm['consultant'] || norm['consultantname'] || norm['reference'] || '';
       const remarks = norm['remarks'] || norm['notes'] || norm['comments'] || norm['otherinfo'] || norm['information'] || '';
 
+      const normP = normalizePhone(phone);
+      const normE = normalizeEmail(email);
       const cleanPhoneDigits = String(phone).replace(/[^0-9]/g, '');
       const hasValidName = name && name.length >= 2;
-      const hasValidPhone = cleanPhoneDigits.length >= 6;
+      const hasValidPhone = cleanPhoneDigits.length >= 10;
 
-      const isValid = hasValidName && hasValidPhone;
+      // Check duplicate against existing database candidates
+      const existingInDb = data.candidates.find(c => {
+        const cPhone = normalizePhone(c.phone);
+        const cEmail = normalizeEmail(c.email);
+        return (normP && cPhone && normP === cPhone) || (normE && cEmail && normE === cEmail);
+      });
+
+      // Check duplicate within the sheet itself
+      const isDuplicateInSheet = Boolean((normP && seenPhonesInSheet.has(normP)) || (normE && seenEmailsInSheet.has(normE)));
+
+      let isValid = hasValidName && hasValidPhone && !existingInDb && !isDuplicateInSheet;
       let statusMsg = 'Ready';
       let statusClass = 'ok';
-      if (!hasValidName && !hasValidPhone) {
+
+      if (existingInDb) {
+        statusMsg = `Duplicate (In DB: ${existingInDb.id})`;
+        statusClass = 'err';
+        isValid = false;
+      } else if (isDuplicateInSheet) {
+        statusMsg = 'Duplicate in File';
+        statusClass = 'err';
+        isValid = false;
+      } else if (!hasValidName && !hasValidPhone) {
         statusMsg = 'Missing Name & Phone';
         statusClass = 'err';
       } else if (!hasValidName) {
         statusMsg = 'Missing Name';
         statusClass = 'err';
       } else if (!hasValidPhone) {
-        statusMsg = 'Missing Phone';
+        statusMsg = 'Invalid Phone (<10 digits)';
         statusClass = 'warn';
       }
+
+      if (normP) seenPhonesInSheet.add(normP);
+      if (normE) seenEmailsInSheet.add(normE);
 
       parsedRows.push({
         name,
