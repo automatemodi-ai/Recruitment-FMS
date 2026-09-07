@@ -5,6 +5,7 @@ import path from 'path';
 import mongoose from 'mongoose';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
+import mammoth from 'mammoth';
 
 import Vacancy from './models/Vacancy.js';
 import Candidate from './models/Candidate.js';
@@ -36,11 +37,16 @@ const uploadStreamToCloudinary = (fileBuffer, folder, originalname) => {
     const cleanName = path.parse(originalname).name.replace(/[^a-zA-Z0-9]/g, '_');
     const extension = path.extname(originalname).slice(1).toLowerCase();
     const imageFormats = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff']);
+    const isImage = imageFormats.has(extension) || extension === 'pdf';
+    const publicId = isImage
+      ? `${Date.now()}_${cleanName}`
+      : `${Date.now()}_${cleanName}${extension ? `.${extension}` : ''}`;
+
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: folder || 'recruitment_fms',
-        resource_type: imageFormats.has(extension) ? 'image' : 'raw',
-        public_id: `${Date.now()}_${cleanName}`
+        resource_type: isImage ? 'image' : 'raw',
+        public_id: publicId
       },
       (error, result) => {
         if (error) return reject(error);
@@ -65,7 +71,7 @@ const getSignedCloudinaryUrl = (sourceUrl) => {
 
   const resourceType = parts[uploadIndex - 1];
   const deliveryParts = parts.slice(uploadIndex + 1);
-  if (deliveryParts[0]?.startsWith('v')) deliveryParts.shift();
+  if (deliveryParts[0] && /^v\d+$/.test(deliveryParts[0])) deliveryParts.shift();
   const publicPath = deliveryParts.join('/');
   const extensionIndex = publicPath.lastIndexOf('.');
   
@@ -81,6 +87,373 @@ const getSignedCloudinaryUrl = (sourceUrl) => {
     type: 'upload',
     attachment: false
   });
+};
+
+// Document & file helpers for previewing Word, PDF, and binary files
+const detectFileType = (buffer, url = '') => {
+  if (!buffer || buffer.length < 4) {
+    return { ext: 'bin', mime: 'application/octet-stream' };
+  }
+
+  // PDF: %PDF (0x25 0x50 0x44 0x46)
+  if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+    return { ext: 'pdf', mime: 'application/pdf', isPdf: true };
+  }
+
+  // OpenXML (DOCX, XLSX, etc.): PK.. (0x50 0x4B 0x03 0x04)
+  if (buffer[0] === 0x50 && buffer[1] === 0x4B && (buffer[2] === 0x03 || buffer[2] === 0x05 || buffer[2] === 0x07)) {
+    const lowerUrl = (url || '').toLowerCase();
+    if (lowerUrl.includes('.xlsx')) {
+      return { ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', isXlsx: true };
+    }
+    return { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', isDocx: true };
+  }
+
+  // Legacy MS Office (DOC, XLS): 0xD0 0xCF 0x11 0xE0
+  if (buffer[0] === 0xD0 && buffer[1] === 0xCF && buffer[2] === 0x11 && buffer[3] === 0xE0) {
+    const lowerUrl = (url || '').toLowerCase();
+    if (lowerUrl.includes('.xls')) {
+      return { ext: 'xls', mime: 'application/vnd.ms-excel', isXls: true };
+    }
+    return { ext: 'doc', mime: 'application/msword', isDoc: true };
+  }
+
+  // PNG: 0x89 0x50 0x4E 0x47
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
+    return { ext: 'png', mime: 'image/png', isImage: true };
+  }
+
+  // JPEG: 0xFF 0xD8 0xFF
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {
+    return { ext: 'jpg', mime: 'image/jpeg', isImage: true };
+  }
+
+  // GIF: GIF8
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+    return { ext: 'gif', mime: 'image/gif', isImage: true };
+  }
+
+  // Fallback to URL extension
+  const extMatch = (url || '').split('?')[0].match(/\.([a-z0-9]+)$/i);
+  const ext = extMatch ? extMatch[1].toLowerCase() : '';
+  if (ext === 'docx') return { ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', isDocx: true };
+  if (ext === 'doc') return { ext: 'doc', mime: 'application/msword', isDoc: true };
+  if (ext === 'pdf') return { ext: 'pdf', mime: 'application/pdf', isPdf: true };
+  if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) return { ext, mime: `image/${ext === 'jpg' ? 'jpeg' : ext}`, isImage: true };
+
+  return { ext: ext || 'bin', mime: 'application/octet-stream' };
+};
+
+const sanitizeDownloadFilename = (sourceUrl, detectedExt, customName) => {
+  let name = '';
+  if (customName) {
+    name = customName.replace(/[^\w\s.-]/gi, '_').replace(/\s+/g, ' ').trim();
+  }
+  if (!name) {
+    try {
+      const parsed = new URL(sourceUrl);
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      let base = segments[segments.length - 1] || 'document';
+      base = decodeURIComponent(base).replace(/^\d{10,14}_/, '');
+      name = base;
+    } catch {
+      name = 'document';
+    }
+  }
+  const cleanExt = (detectedExt || '').toLowerCase().replace(/^\./, '');
+  if (cleanExt && !name.toLowerCase().endsWith(`.${cleanExt}`)) {
+    name = `${name}.${cleanExt}`;
+  }
+  return name || `document.${cleanExt || 'bin'}`;
+};
+
+const buildWordHtmlPreview = ({ title, htmlContent, downloadUrl, fileName }) => {
+  const safeTitle = (title || 'Document').replace(/[<>&"]/g, '');
+  const safeFileName = (fileName || 'document.docx').replace(/[<>&"]/g, '');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${safeTitle}</title>
+  <style>
+    :root {
+      --bg: #f3f5f7;
+      --paper: #ffffff;
+      --text: #1a202c;
+      --text-muted: #718096;
+      --heading: #111827;
+      --border: #e2e8f0;
+      --green: #287b64;
+      --green-dark: #1f624f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px 16px 40px;
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 14px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .preview-header-bar {
+      max-width: 860px;
+      margin: 0 auto 16px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .preview-badge-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .file-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid #bfdbfe;
+    }
+    .file-name-text {
+      font-weight: 600;
+      color: var(--heading);
+      font-size: 13px;
+      max-width: 420px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .preview-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-download-original {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--green);
+      color: #ffffff;
+      text-decoration: none;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+      transition: background 0.15s ease;
+    }
+    .btn-download-original:hover {
+      background: var(--green-dark);
+    }
+    .btn-print {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #f8fafc;
+      color: #334155;
+      border: 1px solid var(--border);
+      padding: 7px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-print:hover {
+      background: #f1f5f9;
+    }
+    .document-container {
+      max-width: 860px;
+      margin: 0 auto;
+      background: var(--paper);
+      padding: 48px 56px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+      min-height: 800px;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--heading);
+      margin-top: 1.4em;
+      margin-bottom: 0.6em;
+      line-height: 1.3;
+    }
+    h1 { font-size: 22px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+    h2 { font-size: 18px; border-bottom: 1px solid #edf2f7; padding-bottom: 4px; }
+    h3 { font-size: 15px; }
+    p { margin: 0.7em 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 13.5px;
+    }
+    table th, table td {
+      border: 1px solid #cbd5e1;
+      padding: 8px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    table th {
+      background: #f8fafc;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    table tr:nth-child(even) td {
+      background: #fcfdfd;
+    }
+    ul, ol {
+      padding-left: 24px;
+      margin: 0.8em 0;
+    }
+    li { margin-bottom: 4px; }
+    a { color: var(--green); text-decoration: underline; }
+    img { max-width: 100%; height: auto; border-radius: 4px; }
+    @media (max-width: 700px) {
+      .document-container { padding: 24px 18px; }
+      body { padding: 12px 8px; }
+      .preview-header-bar { padding: 10px 12px; flex-direction: column; align-items: flex-start; }
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .preview-header-bar { display: none; }
+      .document-container { border: none; box-shadow: none; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-header-bar">
+    <div class="preview-badge-group">
+      <span class="file-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        Word (.docx) Preview
+      </span>
+      <span class="file-name-text" title="${safeFileName}">${safeFileName}</span>
+    </div>
+    <div class="preview-actions">
+      <button type="button" class="btn-print" onclick="window.print()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+        Print
+      </button>
+      <a href="${downloadUrl}" class="btn-download-original" download>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Download Original Document
+      </a>
+    </div>
+  </div>
+  <main class="document-container">
+    ${htmlContent || '<p style="color:#64748b; font-style:italic;">No readable text found in this document.</p>'}
+  </main>
+</body>
+</html>`;
+};
+
+const buildDocFallbackHtml = ({ title, downloadUrl, fileName, message }) => {
+  const safeTitle = (title || 'Document').replace(/[<>&"]/g, '');
+  const safeFileName = (fileName || 'document.doc').replace(/[<>&"]/g, '');
+  const safeMessage = (message || 'This document cannot be previewed directly in the browser.').replace(/[<>&"]/g, '');
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${safeTitle}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 40px 16px;
+      background: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 80vh;
+      box-sizing: border-box;
+    }
+    .card {
+      background: #ffffff;
+      max-width: 480px;
+      width: 100%;
+      padding: 36px 28px;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      text-align: center;
+    }
+    .icon-box {
+      width: 60px;
+      height: 60px;
+      border-radius: 12px;
+      background: #eff6ff;
+      color: #2563eb;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    h2 {
+      font-size: 19px;
+      color: #0f172a;
+      margin: 0 0 8px;
+      font-weight: 700;
+    }
+    .filename {
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 16px;
+      word-break: break-all;
+    }
+    p {
+      font-size: 14px;
+      color: #475569;
+      line-height: 1.55;
+      margin: 0 0 24px;
+    }
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #287b64;
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 10px 22px;
+      border-radius: 6px;
+      box-shadow: 0 2px 4px rgba(40,123,100,0.25);
+    }
+    .btn-download:hover { background: #1f624f; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-box">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+    </div>
+    <h2>Microsoft Word Document</h2>
+    <div class="filename">${safeFileName}</div>
+    <p>${safeMessage}</p>
+    <a href="${downloadUrl}" class="btn-download" download>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      Download Original Document
+    </a>
+  </div>
+</body>
+</html>`;
 };
 
 const ensureInitialStageTimeline = (record, fallbackStage) => {
@@ -226,21 +599,81 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 // Stream signed Cloudinary files through the app so restricted assets do not expose a 401 in the browser.
+// Supports inline Word document (.docx) rendering via Mammoth, legacy .doc fallback, and direct downloads.
 router.get('/file', async (req, res) => {
   try {
     const sourceUrl = String(req.query.url || '');
+    if (!sourceUrl) {
+      return res.status(400).json({ error: 'Missing url parameter' });
+    }
+
     const signedUrl = getSignedCloudinaryUrl(sourceUrl);
     const fileResponse = await fetch(signedUrl);
     if (!fileResponse.ok) {
       return res.status(fileResponse.status).json({ error: 'Document could not be loaded from Cloudinary' });
     }
 
-    res.setHeader('Content-Type', fileResponse.headers.get('content-type') || 'application/octet-stream');
-    res.setHeader('Content-Disposition', 'inline');
-    res.send(Buffer.from(await fileResponse.arrayBuffer()));
+    const arrayBuf = await fileResponse.arrayBuffer();
+    const buffer = Buffer.from(arrayBuf);
+    const fileType = detectFileType(buffer, sourceUrl);
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const customName = req.query.name ? String(req.query.name).trim() : '';
+    const downloadFilename = sanitizeDownloadFilename(sourceUrl, fileType.ext, customName);
+
+    // If download explicitly requested, serve original binary file as attachment
+    if (isDownload) {
+      res.setHeader('Content-Type', fileType.mime || fileResponse.headers.get('content-type') || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${downloadFilename}"`);
+      return res.send(buffer);
+    }
+
+    // If DOCX and viewed in browser/iframe, render converted HTML preview
+    if (fileType.isDocx) {
+      try {
+        const result = await mammoth.convertToHtml({ buffer });
+        const previewHtml = buildWordHtmlPreview({
+          title: customName || downloadFilename,
+          htmlContent: result.value,
+          downloadUrl: `/api/file?url=${encodeURIComponent(sourceUrl)}&download=1${customName ? `&name=${encodeURIComponent(customName)}` : ''}`,
+          fileName: downloadFilename
+        });
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Disposition', 'inline');
+        return res.send(previewHtml);
+      } catch (convErr) {
+        console.error('Mammoth conversion error:', convErr);
+        const fallbackHtml = buildDocFallbackHtml({
+          title: customName || downloadFilename,
+          downloadUrl: `/api/file?url=${encodeURIComponent(sourceUrl)}&download=1${customName ? `&name=${encodeURIComponent(customName)}` : ''}`,
+          fileName: downloadFilename,
+          message: 'Unable to render inline preview for this Word file. You can download and view it directly.'
+        });
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Disposition', 'inline');
+        return res.send(fallbackHtml);
+      }
+    }
+
+    // If legacy DOC, render fallback card with download link
+    if (fileType.isDoc) {
+      const fallbackHtml = buildDocFallbackHtml({
+        title: customName || downloadFilename,
+        downloadUrl: `/api/file?url=${encodeURIComponent(sourceUrl)}&download=1${customName ? `&name=${encodeURIComponent(customName)}` : ''}`,
+        fileName: downloadFilename,
+        message: 'Legacy Microsoft Word (.doc) files cannot be rendered directly in web browsers. Please download to view.'
+      });
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', 'inline');
+      return res.send(fallbackHtml);
+    }
+
+    // For PDF, images, or other browser-renderable files, serve inline
+    res.setHeader('Content-Type', fileType.mime || fileResponse.headers.get('content-type') || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${downloadFilename}"`);
+    res.send(buffer);
   } catch (error) {
     console.error('Document proxy error:', error);
-    res.status(400).json({ error: 'Invalid document URL' });
+    res.status(400).json({ error: error.message || 'Invalid document URL' });
   }
 });
 

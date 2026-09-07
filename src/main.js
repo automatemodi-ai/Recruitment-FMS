@@ -918,6 +918,7 @@ function vacancies() {
           return `<tr>
             <td><strong>${item.title}</strong><small>${item.id} · ${item.location}</small>
               <span class="priority-label ${priorityClass(item.priority)}" style="margin-top:6px">${item.priority}</span>
+              ${item.jd_url ? `<button type="button" class="text-button open-jd-preview" data-id="${item.id}" style="color:var(--green); font-size:11px; font-weight:700; cursor:pointer; padding:0; margin-top:4px; display:inline-block; text-decoration:underline;">View JD ↗</button>` : ''}
             </td>
             <td><strong>${item.owner}</strong><small>${item.department}</small></td>
             <td><small>Opened: ${item.openedOn || '2026-09-02'}</small><small>Deadline: ${item.deadline}</small>${item.filledOn ? `<small>Filled: ${item.filledOn}</small>` : ''}</td>
@@ -1598,6 +1599,15 @@ function bindEvents() {
   document.querySelectorAll('[data-action="view-candidate"]').forEach(button => button.onclick = () => openCandidateDetails(button.dataset.id));
   document.querySelectorAll('[data-action="new-user"]').forEach(button => button.onclick = () => openAddUserModal());
   document.querySelectorAll('.delete-user-btn').forEach(button => button.onclick = () => deleteUser(button.dataset.id, button.dataset.name));
+  document.querySelectorAll('.open-jd-preview').forEach(button => {
+    button.onclick = (e) => {
+      e.stopPropagation();
+      const v = data.vacancies.find(item => item.id === button.dataset.id);
+      if (v && v.jd_url) {
+        openDocumentPreview(v.jd_url, `${v.title} - Job Description`);
+      }
+    };
+  });
   document.querySelectorAll('.open-step-history').forEach(button => button.onclick = event => {
     event.stopPropagation();
     openStepHistoryModal(button.dataset.type, button.dataset.id);
@@ -1640,10 +1650,20 @@ function openCandidateDetails(candidateId) {
   modal.onclick = event => { if (event.target === modal) close(); };
 }
 
-function getDocumentPreviewUrl(documentUrl) {
+function getDocumentPreviewUrl(documentUrl, documentName = '') {
   if (!documentUrl) return '';
   if (documentUrl.includes('res.cloudinary.com/')) {
-    return `${API_BASE}/api/file?url=${encodeURIComponent(documentUrl)}`;
+    const nameParam = documentName ? `&name=${encodeURIComponent(documentName)}` : '';
+    return `${API_BASE}/api/file?url=${encodeURIComponent(documentUrl)}${nameParam}`;
+  }
+  return documentUrl;
+}
+
+function getDocumentDownloadUrl(documentUrl, documentName = '') {
+  if (!documentUrl) return '';
+  if (documentUrl.includes('res.cloudinary.com/')) {
+    const nameParam = documentName ? `&name=${encodeURIComponent(documentName)}` : '';
+    return `${API_BASE}/api/file?url=${encodeURIComponent(documentUrl)}&download=1${nameParam}`;
   }
   return documentUrl;
 }
@@ -1652,8 +1672,9 @@ function openDocumentPreview(documentUrl, documentName) {
   if (!documentUrl) return;
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop document-preview-backdrop';
-  const previewUrl = getDocumentPreviewUrl(documentUrl);
-  modal.innerHTML = `<section class="modal document-preview-modal"><button type="button" class="modal-close" aria-label="Close document preview">X</button><div class="document-preview-head"><div><span class="section-kicker">DOCUMENT PREVIEW</span><h2>${documentName || 'Uploaded document'}</h2></div><a class="secondary document-download" href="${previewUrl}" download>Download</a></div><iframe title="${documentName || 'Uploaded document'}" src="${previewUrl}"></iframe></section>`;
+  const previewUrl = getDocumentPreviewUrl(documentUrl, documentName);
+  const downloadUrl = getDocumentDownloadUrl(documentUrl, documentName);
+  modal.innerHTML = `<section class="modal document-preview-modal"><button type="button" class="modal-close" aria-label="Close document preview">×</button><div class="document-preview-head"><div><span class="section-kicker">DOCUMENT PREVIEW</span><h2>${escapeHtml(documentName || 'Uploaded document')}</h2></div><a class="secondary document-download" href="${downloadUrl}" download style="display:inline-flex; align-items:center; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Download</a></div><iframe title="${escapeHtml(documentName || 'Uploaded document')}" src="${previewUrl}"></iframe></section>`;
   mountModal(modal);
   const close = () => modal.remove();
   modal.querySelector('.modal-close').onclick = close;
