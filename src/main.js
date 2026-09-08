@@ -71,7 +71,9 @@ function renderLogin() {
   <div class="login-container">
     <div class="login-card">
       <div class="login-logo">
-        <div class="brand-mark" style="width:44px; height:44px; font-size:16px;">MF</div>
+        <div class="login-brand-logo-wrap">
+          <img src="/logo.png" alt="Modi Furniture" class="login-brand-logo-img">
+        </div>
         <div>
           <strong>Modi Furniture</strong>
           <small>Recruitment FMS Portal</small>
@@ -101,15 +103,13 @@ function renderLogin() {
   </div>
   `;
 
-  const form = document.querySelector('#login-form');
-  const errBox = document.querySelector('#login-error-msg');
-  const loginBtn = document.querySelector('#login-btn');
-
-  form.onsubmit = async (e) => {
+  document.querySelector('#login-form').onsubmit = async (e) => {
     e.preventDefault();
-    errBox.style.display = 'none';
-    loginBtn.disabled = true;
-    loginBtn.textContent = 'Verifying credentials...';
+    const btn = document.querySelector('#login-btn');
+    const errEl = document.querySelector('#login-error-msg');
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
 
     const email = document.querySelector('#login-email').value.trim();
     const password = document.querySelector('#login-password').value;
@@ -120,30 +120,22 @@ function renderLogin() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      const responseText = await res.text();
-      let resJson = {};
-      if (responseText.trim()) {
-        try {
-          resJson = JSON.parse(responseText);
-        } catch {
-          throw new Error(`Login service returned an invalid response (HTTP ${res.status})`);
-        }
-      }
+      const data = await res.json();
       if (!res.ok) {
-        throw new Error(resJson.error || `Login failed (HTTP ${res.status})`);
-      }
-      if (!resJson.user) {
-        throw new Error('Login service returned an incomplete response');
+        throw new Error(data.error || 'Authentication failed');
       }
 
-      currentUser = resJson.user;
+      currentUser = data.user;
       localStorage.setItem('recruitment_fms_auth', JSON.stringify(currentUser));
       initApp();
+      fetchData();
+      if (currentUser.role === 'Superadmin' || currentUser.role === 'Admin') fetchUsers();
     } catch (err) {
-      errBox.textContent = err.message || 'Login failed. Please check your credentials.';
-      errBox.style.display = 'block';
-      loginBtn.disabled = false;
-      loginBtn.textContent = 'Log In to FMS';
+      errEl.textContent = err.message || 'Login failed. Please check your credentials.';
+      errEl.style.display = 'block';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Log In to FMS';
     }
   };
 }
@@ -154,7 +146,9 @@ function initApp() {
   <div class="shell">
     <aside class="sidebar" id="primary-sidebar" aria-label="Main navigation">
       <div class="brand">
-        <div class="brand-mark">MF</div>
+        <div class="brand-logo-wrap">
+          <img src="/logo.png" alt="Modi Furniture" class="brand-logo-img">
+        </div>
         <div class="brand-copy">
           <strong>Modi Furniture</strong>
           <small>Recruitment FMS</small>
@@ -179,9 +173,14 @@ function initApp() {
     <button type="button" class="navigation-backdrop" aria-label="Close navigation" tabindex="-1" hidden></button>
     <div class="app-content">
       <header class="topbar">
-        <button type="button" id="navigation-toggle" class="navigation-toggle" aria-controls="primary-sidebar" aria-expanded="true" aria-label="Collapse navigation">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-        </button>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button type="button" id="navigation-toggle" class="navigation-toggle" aria-controls="primary-sidebar" aria-expanded="true" aria-label="Collapse navigation">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <div class="topbar-brand">
+            <img src="/logo.png" alt="Modi Furniture">
+          </div>
+        </div>
         <div class="search">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><path d="M21 21l-4.35-4.35"></path></svg>
           <input type="search" id="search" placeholder="Search" aria-label="Search candidates">
