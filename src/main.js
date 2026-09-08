@@ -339,6 +339,13 @@ const daysOpen = vacancy => Math.max(0, Math.floor(((vacancy.filledOn ? new Date
 const stageMeta = candidate => candidateWorkflow[candidate.stage] || { owner: 'HR', output: 'Stage update required', tat: null };
 const isStageOverdue = candidate => stageMeta(candidate).tat !== null && daysInStage(candidate) > stageMeta(candidate).tat;
 const activeCandidates = (list = data.candidates) => list.filter(item => !['Candidate Joined (Closed - Won)', 'Rejected', 'Dropped / Ghosted'].includes(item.stage));
+const isCandidateShortlisted = c => {
+  if (!c) return false;
+  if (c.stage === 'Rejected' || c.stage === 'Dropped / Ghosted') return false;
+  if (c.screening_status === 'Shortlisted') return true;
+  if (c.stage && c.stage !== 'Application Received (New)' && c.stage !== 'On Hold') return true;
+  return false;
+};
 const getVacancyStage = vacancy => vacancyStages.includes(vacancy.stage) ? vacancy.stage : 'Manpower Requirement Raised';
 const vacancyStageMeta = stage => vacancyWorkflow[stage] || vacancyWorkflow['Manpower Requirement Raised'];
 const nextVacancyStage = stage => {
@@ -674,7 +681,15 @@ function renderFilterPanel(key, settings) {
   if (settings.location) fields.push(renderSelectFilter('location', 'Location', uniqueValues([...locations, ...data.candidates.map(candidate => candidate.location)]), 'All locations', filter.location));
   if (settings.priority) fields.push(renderSelectFilter('priority', 'Priority', priorities, 'All priorities', filter.priority));
   if (settings.owner) fields.push(renderSelectFilter('owner', 'Owner', uniqueValues([...managers, ...data.vacancies.map(vacancy => vacancy.owner)]), 'All owners', filter.owner));
-  if (settings.status) fields.push(renderSelectFilter('status', 'Status', vacancyStatuses, 'All statuses', filter.status));
+  if (settings.status) {
+    let statusPlaceholder = 'All statuses';
+    let statusOpts = vacancyStatuses;
+    if (key === 'reports' && activeReportTab === 'vacancy') {
+      statusPlaceholder = 'Open Vacancies (Default)';
+      statusOpts = ['Open', 'Closed', 'On-Hold', 'Cancelled', 'All'];
+    }
+    fields.push(renderSelectFilter('status', 'Status', statusOpts, statusPlaceholder, filter.status));
+  }
   if (settings.role) fields.push(renderSelectFilter('role', 'Role', uniqueValues([...vacancyTitles, ...candidateRoles]), 'All roles', filter.role));
   if (settings.source) fields.push(renderSelectFilter('source', 'Source', sourceOptions, 'All sources', filter.source));
   if (settings.screeningStatus) fields.push(renderSelectFilter('screening_status', 'Screening', ['Pending Review', 'Shortlisted', 'Rejected', 'Hold'], 'All screening', filter.screening_status));
@@ -727,12 +742,144 @@ function render() {
 }
 
 
+function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
+  if (!openRoles || openRoles.length === 0) {
+    return `
+      <div style="padding: 32px 20px; text-align: center; background: #fafcfb; border: 1px dashed var(--line); border-radius: 8px;">
+        <div style="font-size: 28px; margin-bottom: 8px;">📋</div>
+        <strong style="display: block; font-size: 14px; color: var(--ink); margin-bottom: 4px;">No Open Vacancies Found</strong>
+        <p style="margin: 0 0 14px; color: var(--muted); font-size: 12px;">There are currently no open job requisitions matching your filter criteria.</p>
+        <button type="button" class="primary" data-action="new-vacancy" style="font-size: 12px;">+ Add Open Vacancy</button>
+      </div>
+    `;
+  }
+
+  return openRoles.map(vacancy => {
+    const vacancyCandidates = candidateList.filter(c => 
+      (c.requirement_id && sameFilterValue(c.requirement_id, vacancy.id)) || 
+      sameFilterValue(c.role, vacancy.title)
+    );
+    const shortlistedCandidates = vacancyCandidates.filter(isCandidateShortlisted);
+    const totalApplicants = vacancyCandidates.length;
+    const daysActive = daysOpen(vacancy);
+
+    return `
+      <div class="open-vacancy-card">
+        <!-- Vacancy Card Header -->
+        <div class="open-vacancy-header">
+          <div class="open-vacancy-title-area">
+            <span class="vacancy-open-pill">● Open Vacancy</span>
+            <h4 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--ink);">${escapeHtml(vacancy.title)}</h4>
+            <span class="vacancy-code-badge">${escapeHtml(vacancy.id || '')}</span>
+            <span class="priority-label ${priorityClass(vacancy.priority)}">${escapeHtml(vacancy.priority || 'Medium')}</span>
+            ${vacancy.jd_url ? `<button type="button" class="text-button open-jd-preview" data-id="${vacancy.id}" style="color:var(--green); font-size:11px; font-weight:700; cursor:pointer; padding:0; text-decoration:underline;">JD ↗</button>` : ''}
+          </div>
+          <div class="open-vacancy-meta">
+            <span style="color: var(--muted);">📍 ${escapeHtml(vacancy.location || 'Showroom')} · 🏢 ${escapeHtml(vacancy.department || 'Operations')}</span>
+            <span style="color: var(--muted);">👤 Owner: <strong>${escapeHtml(vacancy.owner || 'HR')}</strong></span>
+            <span style="color: var(--muted);">⏱ Open: <strong>${daysActive}d</strong></span>
+            <span class="shortlisted-count-chip ${shortlistedCandidates.length === 0 ? 'zero' : ''}">
+              👥 ${shortlistedCandidates.length} Shortlisted Candidate${shortlistedCandidates.length === 1 ? '' : 's'}
+            </span>
+          </div>
+        </div>
+
+        <!-- Underneath: Shortlisted Candidates List -->
+        <div class="shortlisted-candidates-body">
+          <div class="shortlisted-section-header">
+            <span style="font-weight: 700; color: #53645e; text-transform: uppercase; letter-spacing: 0.5px;">
+              Shortlisted Candidates Under ${escapeHtml(vacancy.title)} (${shortlistedCandidates.length})
+            </span>
+            ${shortlistedCandidates.length > 0 ? `<span style="color: var(--muted); font-size: 11px;">Click candidate name to view full profile & stage timeline</span>` : ''}
+          </div>
+
+          ${shortlistedCandidates.length > 0 ? `
+            <div style="overflow-x: auto;">
+              <table class="shortlisted-candidates-table">
+                <thead>
+                  <tr>
+                    <th style="text-align: left;">Candidate Name</th>
+                    <th style="text-align: left;">Current Stage</th>
+                    <th style="text-align: left;">Time in Stage</th>
+                    <th style="text-align: left;">Phone & Location</th>
+                    <th style="text-align: left;">Screening Status</th>
+                    <th style="text-align: center;">Profile Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${shortlistedCandidates.map(c => `
+                    <tr>
+                      <td>
+                        <button type="button" class="candidate-name-btn" data-action="view-candidate" data-id="${c.id}">
+                          <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="initials" style="width: 28px; height: 28px; font-size: 10px;">${escapeHtml((c.name || 'C').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase())}</span>
+                            <div>
+                              <strong style="font-size: 13px; color: var(--green); display: block;">${escapeHtml(c.name)}</strong>
+                              <small style="color: var(--muted); font-size: 10px; display: block;">${escapeHtml(c.id || '')} ${c.experience ? `· ${escapeHtml(c.experience)}` : ''}</small>
+                            </div>
+                          </div>
+                        </button>
+                      </td>
+                      <td>
+                        <span class="stage ${stageClass(c.stage)}" style="font-size: 11px; padding: 4px 8px; border-radius: 4px;">${escapeHtml(c.stage)}</span>
+                        ${c.interview_date ? `<div style="font-size: 10px; color: var(--green); margin-top: 3px; font-weight: 600;">📅 ${formatDateTime(c.interview_date)}</div>` : ''}
+                      </td>
+                      <td style="font-size: 11px;">
+                        <span class="stage-age ${isStageOverdue(c) ? 'overdue' : ''}">
+                          ⏱ ${daysInStage(c)} day${daysInStage(c) === 1 ? '' : 's'}
+                          ${isStageOverdue(c) ? ' <b style="color:var(--red);">(TAT Overdue)</b>' : ''}
+                        </span>
+                      </td>
+                      <td style="font-size: 11px; color: var(--ink);">
+                        <div>${escapeHtml(c.phone || '-')}</div>
+                        <small style="color: var(--muted);">${escapeHtml(c.location || '-')}</small>
+                      </td>
+                      <td>
+                        <span class="status-badge green" style="font-size: 10px; font-weight: 700; color: #137333; background: #e6f4ea; padding: 3px 8px; border-radius: 4px; display: inline-block;">✓ Shortlisted</span>
+                      </td>
+                      <td style="text-align: center;">
+                        <button type="button" class="text-button" data-action="view-candidate" data-id="${c.id}" style="color: var(--green); font-weight: 700; font-size: 11px; cursor: pointer; padding: 4px 10px; border: 1px solid #c8e0d6; border-radius: 4px; background: #f4f9f6;">
+                          View Profile ↗
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : `
+            <div style="padding: 22px 18px; text-align: center; background: #fafcfb;">
+              <p style="margin: 0 0 6px; font-size: 12px; color: var(--muted); font-style: italic;">
+                No candidates shortlisted yet for this open vacancy · Sourcing in progress
+              </p>
+              <div style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+                <button type="button" class="text-button" data-action="new-candidate" data-requirement="${escapeHtml(vacancy.id)}" style="font-size: 11px; font-weight: 700; color: var(--green); cursor: pointer; text-decoration: underline;">
+                  + Add Candidate for ${escapeHtml(vacancy.title)}
+                </button>
+                ${totalApplicants > 0 ? `
+                  <span style="color: var(--muted); font-size: 11px;">·</span>
+                  <button type="button" class="text-button" data-view="CV Screening" style="font-size: 11px; font-weight: 700; color: var(--green); cursor: pointer; text-decoration: underline;">
+                    Review ${totalApplicants} Applied Candidate${totalApplicants === 1 ? '' : 's'} in CV Screening →
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          `}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 function dashboard(vacancyList = data.vacancies, candidateList = data.candidates) {
   const openRoles = vacancyList.filter(v => v.status === 'Open');
   const open = openRoles.length;
   const averageDays = openRoles.length ? Math.round(openRoles.reduce((sum, v) => sum + daysOpen(v), 0) / openRoles.length) : 0;
   const activeList = activeCandidates(candidateList);
   const overdue = activeList.filter(isStageOverdue);
+  const totalShortlistedInOpen = openRoles.reduce((sum, v) => {
+    return sum + candidateList.filter(c => ((c.requirement_id && sameFilterValue(c.requirement_id, v.id)) || sameFilterValue(c.role, v.title)) && isCandidateShortlisted(c)).length;
+  }, 0);
 
   // 1-Click Quick Preset calculations
   const todayCandidates = candidateList.filter(c => isDateInTabPeriod(c.timestamp || c.createdAt, 'daily'));
@@ -849,6 +996,23 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
     <div class="stat"><span>In active pipeline</span><strong>${activeList.length}</strong><em>Across ${open} open roles</em></div>
     <div class="stat"><span>Average days open</span><strong>${averageDays}</strong><em class="${averageDays > 30 ? 'warn' : 'up'}">${averageDays > 30 ? 'Needs attention' : 'Within control'}</em></div>
   </div>
+
+  <!-- Open Vacancies & Shortlisted Candidates Pipeline Section -->
+  <section class="panel" style="margin-bottom: 24px; border: 1px solid var(--line); padding: 0; overflow: hidden; background: #fff; border-radius: 8px;">
+    <div class="panel-head" style="padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; background: #fafcfb; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <span class="section-kicker" style="color: var(--green); font-weight: 700; font-size: 11px;">REQUISITION PIPELINE</span>
+        <h3 style="margin: 2px 0 0; font-size: 16px;">Open Vacancies & Shortlisted Candidates (${openRoles.length} Open Requisitions)</h3>
+      </div>
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 12px; color: var(--muted);">Total Shortlisted: <strong style="color: var(--ink);">${totalShortlistedInOpen}</strong></span>
+        <button class="text-button" data-view="Vacancies" style="font-size: 12px; font-weight: 700; color: var(--green); cursor: pointer;">Manage Vacancies →</button>
+      </div>
+    </div>
+    <div style="padding: 18px 20px; background: #fdfefe;" class="open-vacancy-pipeline-wrapper">
+      ${renderOpenVacanciesShortlistedCards(openRoles, candidateList)}
+    </div>
+  </section>
   <div class="grid-two">
     <section class="panel pipeline">
       <div class="panel-head">
@@ -1059,7 +1223,7 @@ function renderActionButtons(candidate) {
 let activeReportTab = 'daily';
 
 function isDateInTabPeriod(dateValue, tab) {
-  if (tab === 'vacancy') return true;
+  if (tab === 'vacancy' || tab === 'closed_jobs') return true;
   if (!dateValue) return false;
   const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue)) ? `${dateValue}T00:00:00` : dateValue);
   if (Number.isNaN(date.getTime())) return false;
@@ -1085,7 +1249,7 @@ function isDateInTabPeriod(dateValue, tab) {
 }
 
 function candidateMatchesStageInPeriod(c, targetStages, tab) {
-  if (tab === 'vacancy') {
+  if (tab === 'vacancy' || tab === 'closed_jobs') {
     return targetStages.some(s => c.stage === s || (c.stage_history || []).some(h => h.stage === s || h.to_stage === s));
   }
   if (targetStages.includes(c.stage) && isDateInTabPeriod(c.stage_updated_at || c.timestamp, tab)) {
@@ -1203,6 +1367,154 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
   return { rows, totals };
 }
 
+function computeClosedJobsReport(allVacancies, allCandidates, filter = filters.reports) {
+  let closedList = allVacancies.filter(v => v.status === 'Closed' || v.stage === 'Vacancy Closed' || (v.filledOn && v.status !== 'Open'));
+
+  if (filter.department) closedList = closedList.filter(v => sameFilterValue(v.department, filter.department));
+  if (filter.location) closedList = closedList.filter(v => sameFilterValue(v.location, filter.location));
+  if (filter.priority) closedList = closedList.filter(v => sameFilterValue(v.priority, filter.priority));
+  if (filter.owner) closedList = closedList.filter(v => sameFilterValue(v.owner, filter.owner));
+  if (filter.from || filter.to) {
+    closedList = closedList.filter(v => matchesDateRange(getVacancyDate(v, filter.dateField || 'closed'), filter.from, filter.to));
+  }
+
+  const rows = closedList.map(v => {
+    const vCandidates = allCandidates.filter(c => 
+      (c.requirement_id && sameFilterValue(c.requirement_id, v.id)) || 
+      sameFilterValue(c.role, v.title)
+    );
+
+    const joinedCandidates = vCandidates.filter(c => 
+      c.stage === 'Candidate Joined (Closed - Won)' || 
+      c.stage === 'Candidate Joined' || 
+      c.stage === 'Offer Accepted (Pre-Onboarding)' || 
+      c.stage === 'Offer Accepted'
+    );
+    const joinedCandidate = joinedCandidates.find(c => c.stage === 'Candidate Joined (Closed - Won)' || c.stage === 'Candidate Joined') || joinedCandidates[0];
+
+    const tat = daysOpen(v);
+    const shortlistedCount = vCandidates.filter(c => isCandidateShortlisted(c)).length;
+    const interviewCount = vCandidates.filter(c => c.stage.includes('Interview') || c.interview_date || c.stage === 'Final Selection (HOD Approval)').length;
+    const offerCount = vCandidates.filter(c => c.stage.includes('Offer')).length;
+
+    return {
+      vacancy: v,
+      id: v.id,
+      title: v.title || 'General Position',
+      department: v.department || 'Operations',
+      location: v.location || 'Showroom',
+      priority: v.priority || 'Medium',
+      owner: v.owner || 'HR Recruiter',
+      openedOn: v.openedOn || v.timestamp || '2026-09-01',
+      closedOn: v.filledOn || v.deadline || v.stage_updated_at || v.timestamp || '2026-09-08',
+      tat,
+      joinedCandidate,
+      joinedName: joinedCandidate ? joinedCandidate.name : (v.filledBy || 'Hired Candidate'),
+      joinedCandidateId: joinedCandidate ? joinedCandidate.id : null,
+      totalApplicants: vCandidates.length,
+      shortlisted: shortlistedCount,
+      interviews: interviewCount,
+      offers: offerCount
+    };
+  });
+
+  rows.sort((a, b) => new Date(b.closedOn || 0) - new Date(a.closedOn || 0));
+
+  const totalClosed = rows.length;
+  const totalJoined = rows.filter(r => r.joinedCandidate || r.joinedName).length;
+  const avgTat = totalClosed > 0 ? Math.round(rows.reduce((sum, r) => sum + r.tat, 0) / totalClosed) : 0;
+  const totalApplicants = rows.reduce((sum, r) => sum + r.totalApplicants, 0);
+  const totalShortlisted = rows.reduce((sum, r) => sum + r.shortlisted, 0);
+  const totalInterviews = rows.reduce((sum, r) => sum + r.interviews, 0);
+
+  return {
+    rows,
+    summary: {
+      totalClosed,
+      totalJoined,
+      avgTat,
+      totalApplicants,
+      totalShortlisted,
+      totalInterviews
+    }
+  };
+}
+
+function exportClosedJobsToCsv(closedData) {
+  const headers = [
+    'Vacancy Code',
+    'Position Title',
+    'Department',
+    'Location',
+    'Priority',
+    'Owner / HR',
+    'Opened Date',
+    'Closed Date',
+    'Time-to-Fill (TAT Days)',
+    'Joined Candidate Name',
+    'Total Applications Reached',
+    'Shortlisted Candidates',
+    'Interviews Conducted',
+    'Offers Released',
+    'Status'
+  ];
+
+  const csvLines = [
+    headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',')
+  ];
+
+  closedData.rows.forEach(r => {
+    csvLines.push([
+      `"${(r.id || '').replace(/"/g, '""')}"`,
+      `"${(r.title || '').replace(/"/g, '""')}"`,
+      `"${(r.department || '').replace(/"/g, '""')}"`,
+      `"${(r.location || '').replace(/"/g, '""')}"`,
+      `"${(r.priority || '').replace(/"/g, '""')}"`,
+      `"${(r.owner || '').replace(/"/g, '""')}"`,
+      `"${r.openedOn}"`,
+      `"${r.closedOn}"`,
+      r.tat,
+      `"${(r.joinedName || '').replace(/"/g, '""')}"`,
+      r.totalApplicants,
+      r.shortlisted,
+      r.interviews,
+      r.offers,
+      `"Closed / Filled"`
+    ].join(','));
+  });
+
+  if (closedData.rows.length > 0) {
+    csvLines.push([
+      `"TOTAL (${closedData.rows.length} Closed Jobs)"`,
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      `"Avg: ${closedData.summary.avgTat} days"`,
+      `"${closedData.summary.totalJoined} Joined"`,
+      closedData.summary.totalApplicants,
+      closedData.summary.totalShortlisted,
+      closedData.summary.totalInterviews,
+      '""',
+      '""'
+    ].join(','));
+  }
+
+  const csvContent = '\uFEFF' + csvLines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Recruitment_Closed_Jobs_Report_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function exportReportToCsv(tabType, rows, totals) {
   const tabTitles = {
     daily: 'Daily_Report',
@@ -1263,22 +1575,45 @@ function exportReportToCsv(tabType, rows, totals) {
 }
 
 function reports() {
-  const reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
+  let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
   const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
-  const { rows, totals } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
+
+  // Requirement: Under Vacancy Report Closed jobs should not be shown until selected
+  if (activeReportTab === 'vacancy') {
+    if (!filters.reports.status) {
+      reportVacancies = reportVacancies.filter(v => v.status === 'Open');
+    } else if (filters.reports.status === 'Closed') {
+      reportVacancies = reportVacancies.filter(v => v.status === 'Closed');
+    }
+  }
+
+  const closedJobsData = activeReportTab === 'closed_jobs'
+    ? computeClosedJobsReport(data.vacancies, data.candidates, filters.reports)
+    : null;
+
+  const { rows, totals } = activeReportTab === 'closed_jobs'
+    ? { rows: [], totals: {} }
+    : computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
 
   const tabDescriptions = {
     daily: "Today's recruitment pipeline activity and role-wise conversion breakdown",
     weekly: "Last 7 days recruitment performance and movement summary",
     monthly: "Current month & 30-day cumulative conversion analytics",
-    vacancy: "Requisition-wise total recruitment funnel across all vacancies"
+    vacancy: "Requisition-wise total recruitment funnel across Open vacancies (Closed jobs hidden by default)",
+    closed_jobs: "Master Closed Jobs Report: Completed requisitions, TAT days, joined candidates, and closure funnel"
   };
+
+  const reportTitle = activeReportTab === 'daily' ? 'Daily Report'
+    : activeReportTab === 'weekly' ? 'Weekly Report'
+    : activeReportTab === 'monthly' ? 'Monthly Report'
+    : activeReportTab === 'closed_jobs' ? 'Closed Jobs Report'
+    : 'Vacancy Report';
 
   return `
   <div class="page-intro">
     <div>
       <span class="section-kicker">FMS EXECUTIVE REPORTING</span>
-      <h2>${activeReportTab === 'daily' ? 'Daily Report' : activeReportTab === 'weekly' ? 'Weekly Report' : activeReportTab === 'monthly' ? 'Monthly Report' : 'Vacancy Report'}</h2>
+      <h2>${reportTitle}</h2>
       <p>${tabDescriptions[activeReportTab] || 'Recruitment performance at a glance.'}</p>
     </div>
     <button class="secondary" data-action="export-report-csv" style="display:flex; align-items:center; gap:8px;">
@@ -1300,94 +1635,223 @@ function reports() {
     <button type="button" class="report-tab-btn ${activeReportTab === 'vacancy' ? 'active' : ''}" data-report-tab="vacancy">
       <span>📋</span> Vacancy Report
     </button>
+    <button type="button" class="report-tab-btn ${activeReportTab === 'closed_jobs' ? 'active' : ''}" data-report-tab="closed_jobs">
+      <span>🔒</span> Closed Jobs Report
+    </button>
   </div>
 
   ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: commonDateOptions, department: true, location: true, priority: true, owner: true, source: true, status: true })}
 
-  <div class="report-grid" style="margin-bottom: 24px;">
-    <div class="report-card accent-card">
-      <span>Candidates Reached / Forms</span>
-      <strong>${totals.formsFilled}</strong>
-      <small>Total candidate applications</small>
-    </div>
-    <div class="report-card">
-      <span>Shortlisted</span>
-      <strong>${totals.shortlisted}</strong>
-      <small>${totals.formsFilled ? Math.round((totals.shortlisted / totals.formsFilled) * 100) : 0}% screening rate</small>
-    </div>
-    <div class="report-card">
-      <span>Total Interviews</span>
-      <strong>${totals.telephonic + totals.hrInterview + totals.finalInterview}</strong>
-      <small>Telephonic: ${totals.telephonic} · HR: ${totals.hrInterview} · Final: ${totals.finalInterview}</small>
-    </div>
-    <div class="report-card">
-      <span>Offers Released</span>
-      <strong>${totals.offers}</strong>
-      <small>Recorded job offers</small>
-    </div>
-    <div class="report-card">
-      <span>Vacancies Filled</span>
-      <strong style="color:var(--green);">${totals.vacancyFilled}</strong>
-      <small>Joined successfully</small>
-    </div>
-  </div>
-
-  <section class="panel report-table">
-    <div class="panel-head">
-      <div>
-        <span class="section-kicker">FUNNEL METRICS</span>
-        <h3>List of (Total & Filtered Role Wise) — ${rows.length} Roles</h3>
+  ${activeReportTab === 'vacancy' ? `
+    <div style="background: #f0f7f4; border: 1px solid #d0e7dc; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #287b64;">
+        <span style="font-weight: 700;">ℹ️ VACANCY REPORT FILTER:</span>
+        <span>${filters.reports.status === 'Closed' ? 'Showing <strong>Closed Jobs</strong>.' : filters.reports.status === 'All' ? 'Showing <strong>All Vacancies (Including Closed)</strong>.' : 'Closed jobs are hidden by default. Showing <strong>Open Vacancies only</strong>.'}</span>
+      </div>
+      <div style="display: flex; gap: 8px; font-size: 11px; align-items: center;">
+        <button type="button" class="text-button" data-filter-set-status="Closed" style="color: #a94f42; font-weight: 700; cursor: pointer;">Show Closed Jobs</button>
+        <span style="color: var(--muted);">|</span>
+        <button type="button" class="text-button" data-filter-set-status="" style="color: var(--green); font-weight: 700; cursor: pointer;">Show Open Jobs (Default)</button>
+        <span style="color: var(--muted);">|</span>
+        <button type="button" class="text-button" data-report-tab="closed_jobs" style="color: var(--green); font-weight: 700; cursor: pointer;">Open Closed Jobs Report →</button>
       </div>
     </div>
-    <div style="overflow-x:auto;">
-      <table class="report-summary-table" style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr style="background:#f8faf9; border-bottom:1px solid var(--line);">
-            <th style="text-align:left; min-width:200px;">List of (Total & Filtered Role Wise)</th>
-            <th style="text-align:center; min-width:140px;">No. of Candidates Reached / Forms Filled</th>
-            <th style="text-align:center; min-width:130px;">No. of Shortlisted Candidates</th>
-            <th style="text-align:center; min-width:130px;">No. of Telephonic Interview</th>
-            <th style="text-align:center; min-width:110px;">No. of HR Interview</th>
-            <th style="text-align:center; min-width:120px;">No. of Final Interview</th>
-            <th style="text-align:center; min-width:100px;">No. of Offers</th>
-            <th style="text-align:center; min-width:120px;">No. of Vacancy Filled</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map(r => `
-            <tr>
-              <td>
-                <strong>${escapeHtml(r.role)}</strong>
-                ${r.department ? `<br><small style="color:var(--muted); font-size:11px;">${escapeHtml(r.department)}</small>` : ''}
-              </td>
-              <td style="text-align:center; font-weight:600;">${r.formsFilled}</td>
-              <td style="text-align:center; font-weight:600; color:${r.shortlisted > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.shortlisted}</td>
-              <td style="text-align:center; font-weight:600; color:${r.telephonic > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.telephonic}</td>
-              <td style="text-align:center; font-weight:600; color:${r.hrInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.hrInterview}</td>
-              <td style="text-align:center; font-weight:600; color:${r.finalInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.finalInterview}</td>
-              <td style="text-align:center; font-weight:600; color:${r.offers > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.offers}</td>
-              <td style="text-align:center; font-weight:700; color:${r.vacancyFilled > 0 ? 'var(--green)' : 'var(--muted)'};">${r.vacancyFilled}</td>
-            </tr>
-          `).join('')}
-          ${rows.length === 0 ? `<tr><td colspan="8" style="text-align:center; padding:40px; color:#9aa6a2;">No recruitment activity found for the selected timeframe.</td></tr>` : ''}
-        </tbody>
-        ${rows.length > 0 ? `
-        <tfoot>
-          <tr>
-            <td>TOTAL (${rows.length} Roles)</td>
-            <td style="text-align:center;">${totals.formsFilled}</td>
-            <td style="text-align:center;">${totals.shortlisted}</td>
-            <td style="text-align:center;">${totals.telephonic}</td>
-            <td style="text-align:center;">${totals.hrInterview}</td>
-            <td style="text-align:center;">${totals.finalInterview}</td>
-            <td style="text-align:center;">${totals.offers}</td>
-            <td style="text-align:center; color:var(--green);">${totals.vacancyFilled}</td>
-          </tr>
-        </tfoot>
-        ` : ''}
-      </table>
+  ` : ''}
+
+  ${activeReportTab === 'closed_jobs' ? `
+    <!-- Dedicated Closed Jobs Report View -->
+    <div class="closed-jobs-kpi-grid">
+      <div class="report-card accent-card">
+        <span>Total Closed Vacancies</span>
+        <strong>${closedJobsData.summary.totalClosed}</strong>
+        <small>Completed job requisitions</small>
+      </div>
+      <div class="report-card">
+        <span>Candidates Joined</span>
+        <strong style="color:var(--green);">${closedJobsData.summary.totalJoined}</strong>
+        <small>Successfully onboarded / hired</small>
+      </div>
+      <div class="report-card">
+        <span>Average Time-to-Fill</span>
+        <strong>${closedJobsData.summary.avgTat}d</strong>
+        <small>Days from opening to closure</small>
+      </div>
+      <div class="report-card">
+        <span>Total Applications Handled</span>
+        <strong>${closedJobsData.summary.totalApplicants}</strong>
+        <small>Across ${closedJobsData.summary.totalClosed} closed positions</small>
+      </div>
+      <div class="report-card">
+        <span>Shortlisted Pipeline</span>
+        <strong>${closedJobsData.summary.totalShortlisted}</strong>
+        <small>${closedJobsData.summary.totalApplicants ? Math.round((closedJobsData.summary.totalShortlisted / closedJobsData.summary.totalApplicants) * 100) : 0}% screening qualification</small>
+      </div>
     </div>
-  </section>
+
+    <section class="panel report-table">
+      <div class="panel-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <div>
+          <span class="section-kicker">CLOSURE AUDIT & PERFORMANCE</span>
+          <h3>List of Closed & Filled Job Requisitions — ${closedJobsData.rows.length} Closed Roles</h3>
+        </div>
+        <span style="font-size:12px; color:var(--muted);">All completed requisitions with TAT and joined candidates</span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="report-summary-table" style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f8faf9; border-bottom:1px solid var(--line);">
+              <th style="text-align:left; min-width:190px;">Closed Vacancy & Code</th>
+              <th style="text-align:left; min-width:130px;">Dept & Location</th>
+              <th style="text-align:left; min-width:140px;">Opening → Closed</th>
+              <th style="text-align:center; min-width:90px;">TAT</th>
+              <th style="text-align:left; min-width:170px;">Joined Candidate</th>
+              <th style="text-align:center; min-width:160px;">Recruitment Funnel</th>
+              <th style="text-align:center; min-width:110px;">Owner & Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${closedJobsData.rows.map(r => `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(r.title)}</strong>
+                  <div style="display:flex; align-items:center; gap:6px; margin-top:3px;">
+                    <span class="vacancy-code-badge">${escapeHtml(r.id || '')}</span>
+                    <span class="priority-label ${priorityClass(r.priority)}">${escapeHtml(r.priority)}</span>
+                  </div>
+                </td>
+                <td>
+                  <strong>${escapeHtml(r.department)}</strong>
+                  <small style="color:var(--muted);">📍 ${escapeHtml(r.location)}</small>
+                </td>
+                <td style="font-size:11px;">
+                  <div>Opened: <strong>${r.openedOn}</strong></div>
+                  <div style="color:var(--green); font-weight:600;">Closed: <strong>${r.closedOn}</strong></div>
+                </td>
+                <td style="text-align:center;">
+                  <span class="tat-badge ${r.tat <= 15 ? 'fast' : r.tat <= 30 ? 'normal' : 'extended'}">
+                    ${r.tat} Days
+                  </span>
+                </td>
+                <td>
+                  ${r.joinedCandidateId ? `
+                    <button type="button" class="candidate-name-btn" data-action="view-candidate" data-id="${r.joinedCandidateId}">
+                      <span class="joined-candidate-chip">
+                        <span>✓</span> <strong>${escapeHtml(r.joinedName)}</strong> ↗
+                      </span>
+                    </button>
+                  ` : `
+                    <span class="joined-candidate-chip">
+                      <span>✓</span> <strong>${escapeHtml(r.joinedName)}</strong>
+                    </span>
+                  `}
+                </td>
+                <td style="text-align:center; font-size:11px;">
+                  <div style="display:flex; justify-content:center; gap:8px; color:var(--ink);">
+                    <span title="Applications Reached"><b>${r.totalApplicants}</b> Sourced</span>
+                    <span>→</span>
+                    <span title="Shortlisted"><b>${r.shortlisted}</b> Shortlisted</span>
+                    <span>→</span>
+                    <span title="Interviews"><b>${r.interviews}</b> Interview</span>
+                  </div>
+                </td>
+                <td style="text-align:center;">
+                  <div style="font-size:11px; font-weight:600; margin-bottom:4px;">${escapeHtml(r.owner)}</div>
+                  <span class="status filled" style="font-size:10px; padding:3px 8px; border-radius:4px;">Closed / Filled</span>
+                </td>
+              </tr>
+            `).join('')}
+            ${closedJobsData.rows.length === 0 ? `<tr><td colspan="7" style="text-align:center; padding:40px; color:#9aa6a2;">No closed jobs found matching your filter criteria.</td></tr>` : ''}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  ` : `
+    <!-- Funnel Metrics Table View for Daily, Weekly, Monthly, and Vacancy Reports -->
+    <div class="report-grid" style="margin-bottom: 24px;">
+      <div class="report-card accent-card">
+        <span>Candidates Reached / Forms</span>
+        <strong>${totals.formsFilled}</strong>
+        <small>Total candidate applications</small>
+      </div>
+      <div class="report-card">
+        <span>Shortlisted</span>
+        <strong>${totals.shortlisted}</strong>
+        <small>${totals.formsFilled ? Math.round((totals.shortlisted / totals.formsFilled) * 100) : 0}% screening rate</small>
+      </div>
+      <div class="report-card">
+        <span>Total Interviews</span>
+        <strong>${totals.telephonic + totals.hrInterview + totals.finalInterview}</strong>
+        <small>Telephonic: ${totals.telephonic} · HR: ${totals.hrInterview} · Final: ${totals.finalInterview}</small>
+      </div>
+      <div class="report-card">
+        <span>Offers Released</span>
+        <strong>${totals.offers}</strong>
+        <small>Recorded job offers</small>
+      </div>
+      <div class="report-card">
+        <span>Vacancies Filled</span>
+        <strong style="color:var(--green);">${totals.vacancyFilled}</strong>
+        <small>Joined successfully</small>
+      </div>
+    </div>
+
+    <section class="panel report-table">
+      <div class="panel-head">
+        <div>
+          <span class="section-kicker">FUNNEL METRICS</span>
+          <h3>List of (Total & Filtered Role Wise) — ${rows.length} Roles</h3>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="report-summary-table" style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f8faf9; border-bottom:1px solid var(--line);">
+              <th style="text-align:left; min-width:200px;">List of (Total & Filtered Role Wise)</th>
+              <th style="text-align:center; min-width:140px;">No. of Candidates Reached / Forms Filled</th>
+              <th style="text-align:center; min-width:130px;">No. of Shortlisted Candidates</th>
+              <th style="text-align:center; min-width:130px;">No. of Telephonic Interview</th>
+              <th style="text-align:center; min-width:110px;">No. of HR Interview</th>
+              <th style="text-align:center; min-width:120px;">No. of Final Interview</th>
+              <th style="text-align:center; min-width:100px;">No. of Offers</th>
+              <th style="text-align:center; min-width:120px;">No. of Vacancy Filled</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>
+                  <strong>${escapeHtml(r.role)}</strong>
+                  ${r.department ? `<br><small style="color:var(--muted); font-size:11px;">${escapeHtml(r.department)}</small>` : ''}
+                </td>
+                <td style="text-align:center; font-weight:600;">${r.formsFilled}</td>
+                <td style="text-align:center; font-weight:600; color:${r.shortlisted > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.shortlisted}</td>
+                <td style="text-align:center; font-weight:600; color:${r.telephonic > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.telephonic}</td>
+                <td style="text-align:center; font-weight:600; color:${r.hrInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.hrInterview}</td>
+                <td style="text-align:center; font-weight:600; color:${r.finalInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.finalInterview}</td>
+                <td style="text-align:center; font-weight:600; color:${r.offers > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.offers}</td>
+                <td style="text-align:center; font-weight:700; color:${r.vacancyFilled > 0 ? 'var(--green)' : 'var(--muted)'};">${r.vacancyFilled}</td>
+              </tr>
+            `).join('')}
+            ${rows.length === 0 ? `<tr><td colspan="8" style="text-align:center; padding:40px; color:#9aa6a2;">No recruitment activity found for the selected timeframe.</td></tr>` : ''}
+          </tbody>
+          ${rows.length > 0 ? `
+          <tfoot>
+            <tr>
+              <td>TOTAL (${rows.length} Roles)</td>
+              <td style="text-align:center;">${totals.formsFilled}</td>
+              <td style="text-align:center;">${totals.shortlisted}</td>
+              <td style="text-align:center;">${totals.telephonic}</td>
+              <td style="text-align:center;">${totals.hrInterview}</td>
+              <td style="text-align:center;">${totals.finalInterview}</td>
+              <td style="text-align:center;">${totals.offers}</td>
+              <td style="text-align:center; color:var(--green);">${totals.vacancyFilled}</td>
+            </tr>
+          </tfoot>
+          ` : ''}
+        </table>
+      </div>
+    </section>
+  `}
   `;
 }
 
@@ -1606,7 +2070,7 @@ function bindEvents() {
     save(); render(); 
   });
   document.querySelectorAll('[data-action="new-vacancy"]').forEach(button => button.onclick = () => openModal('vacancy'));
-  document.querySelectorAll('[data-action="new-candidate"]').forEach(button => button.onclick = () => openModal('candidate'));
+  document.querySelectorAll('[data-action="new-candidate"]').forEach(button => button.onclick = () => openModal('candidate', button.dataset.requirement));
   document.querySelectorAll('[data-action="bulk-candidate"]').forEach(button => button.onclick = () => openBulkCandidateModal());
   document.querySelectorAll('[data-action="view-candidate"]').forEach(button => button.onclick = () => openCandidateDetails(button.dataset.id));
   document.querySelectorAll('[data-action="new-user"]').forEach(button => button.onclick = () => openAddUserModal());
@@ -1628,11 +2092,23 @@ function bindEvents() {
     activeReportTab = button.dataset.reportTab;
     render();
   });
+  document.querySelectorAll('[data-filter-set-status]').forEach(button => button.onclick = () => {
+    filters.reports.status = button.dataset.filterSetStatus;
+    render();
+  });
   document.querySelectorAll('[data-action="export-report-csv"]').forEach(button => button.onclick = () => {
-    const reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
+    let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
+    if (activeReportTab === 'vacancy' && !filters.reports.status) {
+      reportVacancies = reportVacancies.filter(v => v.status === 'Open');
+    }
     const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
-    const { rows, totals } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
-    exportReportToCsv(activeReportTab, rows, totals);
+    if (activeReportTab === 'closed_jobs') {
+      const closedData = computeClosedJobsReport(data.vacancies, data.candidates, filters.reports);
+      exportClosedJobsToCsv(closedData);
+    } else {
+      const { rows, totals } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
+      exportReportToCsv(activeReportTab, rows, totals);
+    }
   });
   document.querySelectorAll('[data-dashboard-preset]').forEach(button => {
     button.onclick = () => {
@@ -1743,7 +2219,7 @@ function updateVacancyStage(vacancyId, nextStage) {
 }
 
 
-function openModal(type) {
+function openModal(type, preselectedRequirementId = '') {
     const vacancy = type === 'vacancy';
     const modal = document.createElement('div');
     modal.className = 'modal-backdrop';
@@ -1753,7 +2229,7 @@ function openModal(type) {
       <label>Requirement ID (Link to Vacancy)
         <select name="requirement_id" required>
           <option value="">Select an open vacancy...</option>
-          ${data.vacancies.filter(v => v.status === 'Open').map(v => "<option value='" + v.id + "'>" + v.id + " - " + v.title + " (" + v.department + ")</option>").join('')}
+          ${data.vacancies.filter(v => v.status === 'Open').map(v => "<option value='" + v.id + "' " + (sameFilterValue(v.id, preselectedRequirementId) ? "selected" : "") + ">" + v.id + " - " + v.title + " (" + v.department + ")</option>").join('')}
         </select>
       </label>
       <label>Candidate ID<input value="CAN-${new Date().getFullYear()}-${String(data.candidates.length + 1).padStart(4, '0')}" disabled></label>

@@ -863,3 +863,154 @@ td { overflow-wrap: anywhere; }
   background: #eef6f3;
   border-color: var(--green);
 }
+
+/* Open Vacancies & Shortlisted Candidates Pipeline Section */
+.open-vacancy-pipeline-wrapper {
+  display: grid;
+  gap: 16px;
+}
+.open-vacancy-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.open-vacancy-card:hover {
+  border-color: #bad3c8;
+  box-shadow: 0 2px 8px rgba(40, 123, 100, 0.08);
+}
+.open-vacancy-header {
+  padding: 14px 18px;
+  background: #fdfefe;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.open-vacancy-title-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.vacancy-open-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #e0f3e9;
+  color: #277356;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.vacancy-code-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: #f0f4f2;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.open-vacancy-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.shortlisted-count-chip {
+  background: #e6f4ea;
+  color: #137333;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.shortlisted-count-chip.zero {
+  background: #f1f3f4;
+  color: #5f6368;
+}
+.shortlisted-section-header {
+  padding: 9px 18px;
+  background: #f8faf9;
+  border-bottom: 1px solid #edf1ef;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+.shortlisted-candidates-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 650px;
+}
+.shortlisted-candidates-table th {
+  padding: 9px 18px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  background: #ffffff;
+  border-bottom: 1px solid #edf1ef;
+}
+.shortlisted-candidates-table td {
+  padding: 10px 18px;
+  border-bottom: 1px solid #f2f5f3;
+  vertical-align: middle;
+}
+.candidate-name-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  display: inline-block;
+}
+.candidate-name-btn:hover strong {
+  color: var(--green);
+  text-decoration: underline;
+}
+
+/* Closed Jobs Report Tab Styles */
+.report-tab-btn[data-report-tab="closed_jobs"].active {
+  color: #a94f42;
+  background: #fce7e1;
+  font-weight: 700;
+}
+.closed-jobs-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.tat-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.tat-badge.fast { background: #e0f4eb; color: #1e6c56; }
+.tat-badge.normal { background: #e8f0fe; color: #1a73e8; }
+.tat-badge.extended { background: #fef0db; color: #b06000; }
+.joined-candidate-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #e6f4ea;
+  color: #137333;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11px;
+}
