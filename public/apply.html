@@ -5,12 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" type="image/png" href="/logo.png" />
   <title>Job Application - Modi Furniture</title>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; }
     html { color-scheme: light; -webkit-text-size-adjust: 100%; }
     body {
-      font-family: 'DM Sans', sans-serif;
+      font-family: 'Lato', sans-serif;
       background: #f7f9f6;
       color: #202827;
       margin: 0;
@@ -42,7 +44,8 @@
       margin: 0;
       font-size: clamp(22px, 5vw, 28px);
       line-height: 1.25;
-      color: #287b64;
+      color: #e31e2b;
+      font-weight: 900;
     }
     .brand p {
       margin: 5px 0 0;
@@ -91,16 +94,16 @@
       padding: 7px 12px;
       border: 0;
       border-radius: 5px;
-      background: #e3eee8;
-      color: #245e4d;
+      background: #fff0f1;
+      color: #e31e2b;
       font: inherit;
       font-weight: 700;
       cursor: pointer;
     }
     input:focus, select:focus, textarea:focus {
-      outline: 3px solid #b4d9ca;
+      outline: 3px solid rgba(227, 30, 43, 0.15);
       outline-offset: 2px;
-      border-color: #287b64;
+      border-color: #e31e2b;
       background: #fff;
     }
     .hint {
@@ -117,7 +120,7 @@
       min-width: 0;
     }
     button {
-      background: #287b64;
+      background: #e31e2b;
       color: #fff;
       border: none;
       padding: 14px;
@@ -133,9 +136,9 @@
       touch-action: manipulation;
     }
     button:hover {
-      background: #1d614e;
+      background: #b91520;
     }
-    button:focus-visible { outline: 3px solid #287b64; outline-offset: 3px; }
+    button:focus-visible { outline: 3px solid #e31e2b; outline-offset: 3px; }
     button:disabled { cursor: wait; opacity: 0.7; }
     #success-msg {
       display: none;
@@ -143,7 +146,7 @@
       padding: clamp(24px, 6vw, 40px) clamp(12px, 4vw, 20px);
       background: #dff2e9;
       border-radius: 8px;
-      color: #287b64;
+      color: #166534;
     }
     #success-msg h2 { margin-top: 0; }
     

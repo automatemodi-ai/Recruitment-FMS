@@ -500,7 +500,7 @@ function renderStageTimeline(record, stageList) {
     return `<div class="timeline-step ${isCurrent ? 'active' : ''} ${isDone ? 'done' : ''}">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <strong>${escapeHtml(stage)}</strong>
-        ${isDone ? '<span style="font-size:10px; color:#287b64; font-weight:700;">✓ Completed</span>' : isCurrent ? '<span style="font-size:10px; color:var(--green); font-weight:700;">▶ In Progress</span>' : ''}
+        ${isDone ? '<span style="font-size:10px; color:#16a34a; font-weight:700;">✓ Completed</span>' : isCurrent ? '<span style="font-size:10px; color:#e31e2b; font-weight:700;">▶ In Progress</span>' : ''}
       </div>
       <small>📅 Started: <b>${formatDateTime(stamp.entered_at)}</b></small>
       ${stamp.completed_at ? `<small>⏱️ Sent to Next: <b>${formatDateTime(stamp.completed_at)}</b> (Took ${formatDuration(stamp.entered_at, stamp.completed_at)})</small>` : isCurrent ? `<small style="color:#b45309;">⌛ In Progress: <b>${formatDuration(stamp.entered_at)}</b></small>` : ''}
@@ -1179,7 +1179,7 @@ function candidates(list) {
       ${tabStages.map(stage => {
         const count = shortlisted.filter(c => c.stage === stage).length;
         const isActive = stage === activePipelineStage;
-        return `<button class="tab-btn ${isActive ? 'active' : ''}" data-stage="${stage}" style="padding:10px 16px; border:none; background:${isActive ? '#287b64' : '#fff'}; color:${isActive ? '#fff' : '#71807d'}; border-radius:6px; font-weight:600; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.05); white-space:nowrap;">
+        return `<button class="tab-btn ${isActive ? 'active' : ''}" data-stage="${stage}" style="padding:10px 16px; border:none; background:${isActive ? '#e31e2b' : '#fff'}; color:${isActive ? '#fff' : '#71807d'}; border-radius:6px; font-weight:600; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.05); white-space:nowrap;">
           ${stage} <span style="background:${isActive ? 'rgba(255,255,255,0.2)' : '#f0f4f2'}; padding:2px 8px; border-radius:12px; margin-left:6px; font-size:12px;">${count}</span>
         </button>`;
       }).join('')}
@@ -1208,7 +1208,7 @@ function renderActionButtons(candidate) {
   }
 
   if (nextStage) {
-    html += `<button class="advance-btn" data-id="${candidate.id}" data-next="${nextStage}" style="background:#287b64; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Move to ${nextStage.split(' ')[0]}</button>`;
+    html += `<button class="advance-btn" data-id="${candidate.id}" data-next="${nextStage}" style="background:#e31e2b; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Move to ${nextStage.split(' ')[0]}</button>`;
   }
   
   html += `<button class="hold-btn" data-id="${candidate.id}" data-next="On Hold" style="background:#fff8e8; color:#9b6a1d; border:1px solid #f6e5bd; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Hold</button>`;
@@ -1642,8 +1642,8 @@ function reports() {
   ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: commonDateOptions, department: true, location: true, priority: true, owner: true, source: true, status: true })}
 
   ${activeReportTab === 'vacancy' ? `
-    <div style="background: #f0f7f4; border: 1px solid #d0e7dc; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #287b64;">
+    <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #c53030;">
         <span style="font-weight: 700;">ℹ️ VACANCY REPORT FILTER:</span>
         <span>${filters.reports.status === 'Closed' ? 'Showing <strong>Closed Jobs</strong>.' : filters.reports.status === 'All' ? 'Showing <strong>All Vacancies (Including Closed)</strong>.' : 'Closed jobs are hidden by default. Showing <strong>Open Vacancies only</strong>.'}</span>
       </div>

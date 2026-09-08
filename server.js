@@ -186,15 +186,15 @@ const buildWordHtmlPreview = ({ title, htmlContent, downloadUrl, fileName }) => 
       --text-muted: #718096;
       --heading: #111827;
       --border: #e2e8f0;
-      --green: #287b64;
-      --green-dark: #1f624f;
+      --green: #e31e2b;
+      --green-dark: #b91520;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       padding: 20px 16px 40px;
       background: var(--bg);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-family: 'Lato', sans-serif;
       color: var(--text);
       line-height: 1.65;
       font-size: 14px;
@@ -379,7 +379,7 @@ const buildDocFallbackHtml = ({ title, downloadUrl, fileName, message }) => {
       margin: 0;
       padding: 40px 16px;
       background: #f8fafc;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: 'Lato', sans-serif;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -429,16 +429,16 @@ const buildDocFallbackHtml = ({ title, downloadUrl, fileName, message }) => {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      background: #287b64;
+      background: #e31e2b;
       color: #ffffff;
       text-decoration: none;
       font-weight: 600;
       font-size: 14px;
       padding: 10px 22px;
       border-radius: 6px;
-      box-shadow: 0 2px 4px rgba(40,123,100,0.25);
+      box-shadow: 0 2px 4px rgba(227,30,43,0.25);
     }
-    .btn-download:hover { background: #1f624f; }
+    .btn-download:hover { background: #b91520; }
   </style>
 </head>
 <body>
