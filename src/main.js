@@ -268,7 +268,27 @@ const normalizeVacancy = vacancy => {
   return { ...vacancy, timestamp: toIsoDateTime(vacancy.timestamp || vacancy.createdAt || vacancy.openedOn || stage_updated_at) || stage_updated_at, stage, stage_updated_at, stage_history: vacancy.stage_history || [], stage_timestamps: normalizeStageTimestamps({ ...vacancy, stage_updated_at }, stage) };
 };
 
-function fetchData() {
+// --- Real-time auto-refresh system ---
+let _autoRefreshTimer = null;
+let _lastDataFingerprint = '';
+const AUTO_REFRESH_INTERVAL = 10000; // 10 seconds
+
+function _computeFingerprint(resData) {
+  // Lightweight fingerprint: count + most-recent updatedAt for both collections
+  const vLen = (resData.vacancies || []).length;
+  const cLen = (resData.candidates || []).length;
+  const vMax = (resData.vacancies || []).reduce((m, v) => {
+    const t = v.updatedAt || v.createdAt || '';
+    return t > m ? t : m;
+  }, '');
+  const cMax = (resData.candidates || []).reduce((m, c) => {
+    const t = c.updatedAt || c.createdAt || '';
+    return t > m ? t : m;
+  }, '');
+  return `v${vLen}:${vMax}|c${cLen}:${cMax}`;
+}
+
+function fetchData(isAutoRefresh = false) {
   fetch(`${API_BASE}/api/data`)
     .then(async res => {
       if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
@@ -276,17 +296,46 @@ function fetchData() {
       return text ? JSON.parse(text) : { vacancies: [], candidates: [] };
     })
     .then(resData => {
+      const newFingerprint = _computeFingerprint(resData);
+      // On auto-refresh, skip render if nothing changed (avoids flicker)
+      if (isAutoRefresh && newFingerprint === _lastDataFingerprint) return;
+      _lastDataFingerprint = newFingerprint;
       data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
       render();
     })
     .catch(err => {
       console.error('Fetch error:', err);
-      const main = document.querySelector('main');
-      if (main) {
-        main.innerHTML = '<h2 style="text-align:center;margin-top:50px;color:#e53e3e;">⚠ Backend API is not running!</h2><p style="text-align:center;">Make sure you are running <b>npm run dev</b> in the terminal so that both the backend (port 3000) and frontend are running together.</p>';
+      if (!isAutoRefresh) {
+        const main = document.querySelector('main');
+        if (main) {
+          main.innerHTML = '<h2 style="text-align:center;margin-top:50px;color:#e53e3e;">⚠ Backend API is not running!</h2><p style="text-align:center;">Make sure you are running <b>npm run dev</b> in the terminal so that both the backend (port 3000) and frontend are running together.</p>';
+        }
       }
     });
 }
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  _autoRefreshTimer = setInterval(() => fetchData(true), AUTO_REFRESH_INTERVAL);
+}
+
+function stopAutoRefresh() {
+  if (_autoRefreshTimer) {
+    clearInterval(_autoRefreshTimer);
+    _autoRefreshTimer = null;
+  }
+}
+
+// Pause polling when tab is hidden, resume + immediate fetch when visible
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopAutoRefresh();
+  } else if (currentUser) {
+    fetchData(true);   // Immediate refresh on tab focus
+    startAutoRefresh();
+  }
+});
+// --- End real-time auto-refresh system ---
 
 
 
