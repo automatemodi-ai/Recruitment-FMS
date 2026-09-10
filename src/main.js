@@ -65,6 +65,7 @@ try {
 let usersList = [];
 
 function renderLogin() {
+  stopAutoRefresh();
   navigationUI?.destroy();
   const app = document.querySelector('#app');
   app.innerHTML = `
@@ -228,6 +229,7 @@ function initApp() {
   };
 
   fetchData();
+  startAutoRefresh();
   fetchUsers();
 }
 
