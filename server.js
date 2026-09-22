@@ -627,7 +627,10 @@ router.post('/sync', async (req, res) => {
       for (const v of vacancies) {
         if (!v.id) continue;
         ensureInitialStageTimeline(v, 'Manpower Requirement Raised');
-        await Vacancy.findOneAndUpdate({ id: v.id }, v, { upsert: true, new: true, setDefaultsOnInsert: true });
+        const vDoc = { ...v };
+        delete vDoc._id;
+        delete vDoc.__v;
+        await Vacancy.findOneAndUpdate({ id: v.id }, vDoc, { upsert: true, new: true, setDefaultsOnInsert: true });
       }
     }
 
@@ -636,6 +639,10 @@ router.post('/sync', async (req, res) => {
         if (!c.id) continue;
         ensureInitialStageTimeline(c, 'Application Received (New)');
         
+        const cDoc = { ...c };
+        delete cDoc._id;
+        delete cDoc.__v;
+
         // Prevent creating new records with duplicate phone or email
         const existingRecord = await Candidate.findOne({ id: c.id }).lean();
         if (!existingRecord && (c.phone || c.email)) {
@@ -645,7 +652,7 @@ router.post('/sync', async (req, res) => {
             continue;
           }
         }
-        await Candidate.findOneAndUpdate({ id: c.id }, c, { upsert: true, new: true, setDefaultsOnInsert: true });
+        await Candidate.findOneAndUpdate({ id: c.id }, cDoc, { upsert: true, new: true, setDefaultsOnInsert: true });
       }
     }
 
@@ -967,6 +974,8 @@ router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
   try {
     const candidateId = req.params.id;
     const updateData = { ...req.body };
+    delete updateData._id;
+    delete updateData.__v;
 
     const existing = await Candidate.findOne({ id: candidateId });
     if (!existing) {

@@ -752,7 +752,8 @@ function renderFilterPanel(key, settings) {
 }
 
 function save() {
-  fetch(`${API_BASE}/api/sync`, {
+  _lastDataFingerprint = _computeFingerprint(data);
+  return fetch(`${API_BASE}/api/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -1201,8 +1202,13 @@ function renderCandidateStageCell(candidate) {
       <span class="pulse-dot"></span>
       <span>Step Started: <b>${formatDateTime(stamp.entered_at || candidate.stage_updated_at || candidate.timestamp)}</b></span>
     </div>
+    <div style="margin-top:5px;">
+      <select class="stage-select" data-id="${candidate.id}" title="Change pipeline stage directly" style="font-size:11px; padding:3px 6px; border:1px solid #c2dbd0; border-radius:4px; max-width:190px; background:#fff; font-weight:600; color:#176049; cursor:pointer;">
+        ${stages.map(st => `<option value="${escapeHtml(st)}" ${candidate.stage === st ? 'selected' : ''}>${escapeHtml(st)}</option>`).join('')}
+      </select>
+    </div>
     <button type="button" class="text-button open-step-history" data-type="candidate" data-id="${candidate.id}" style="padding:0; font-size:11px; margin-top:3px; color:var(--green); text-align:left; font-weight:700; cursor:pointer; display:block;">
-      🕒 Step Timestamps & Log (${historyCount} completed) →
+      🕒 Step History (${historyCount} completed) →
     </button>
   </td>`;
 }
@@ -1223,9 +1229,8 @@ function candidates(list) {
       <button type="button" class="candidate-edit-btn" data-id="${item.id}" title="Edit candidate details">✏️ Edit</button>
     </td></tr>`).join('')}${rows.length === 0 ? `<tr><td colspan="7" style="text-align:center; padding:40px; color:#9aa6a2;">No applications match the selected filters</td></tr>` : ''}</tbody></table></section>`;
   } else {
-    // Pipeline View
-    // Filter to only shortlisted candidates first
-    const shortlisted = list.filter(x => x.screening_status === 'Shortlisted');
+    // Pipeline View: include all candidates who have been moved into pipeline or shortlisted
+    const pipelineCandidates = list.filter(x => x.stage !== 'Application Received (New)' || x.screening_status === 'Shortlisted');
     
     // Group into Active Pipeline tabs
     const tabStages = stages.filter(s => s !== 'Application Received (New)');
@@ -1234,12 +1239,12 @@ function candidates(list) {
     if (!tabStages.includes(activePipelineStage)) activePipelineStage = 'CV Screened & Shortlisted';
     
     // Filter rows for the active tab
-    const rows = shortlisted.filter(x => x.stage === activePipelineStage);
+    const rows = pipelineCandidates.filter(x => x.stage === activePipelineStage);
     
     // Build tabs HTML
     const tabsHtml = `<div class="pipeline-tabs" style="display:flex; gap:10px; margin-bottom:20px; overflow-x:auto; padding-bottom:10px;">
       ${tabStages.map(stage => {
-        const count = shortlisted.filter(c => c.stage === stage).length;
+        const count = pipelineCandidates.filter(c => c.stage === stage).length;
         const isActive = stage === activePipelineStage;
         return `<button class="tab-btn ${isActive ? 'active' : ''}" data-stage="${stage}" style="padding:10px 16px; border:none; background:${isActive ? '#e31e2b' : '#fff'}; color:${isActive ? '#fff' : '#71807d'}; border-radius:6px; font-weight:600; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,0.05); white-space:nowrap;">
           ${stage} <span style="background:${isActive ? 'rgba(255,255,255,0.2)' : '#f0f4f2'}; padding:2px 8px; border-radius:12px; margin-left:6px; font-size:12px;">${count}</span>
@@ -1247,7 +1252,7 @@ function candidates(list) {
       }).join('')}
     </div>`;
 
-    return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${shortlisted.length} shortlisted candidates</p></div><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button></div>
+    return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${pipelineCandidates.length} active candidates in pipeline</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add Candidate</button></div></div>
     ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true })}
     ${tabsHtml}
     <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
@@ -1260,25 +1265,42 @@ function candidates(list) {
 }
 
 function renderActionButtons(candidate) {
-  const currentIndex = stages.indexOf(candidate.stage);
-  const nextStage = currentIndex >= 0 && currentIndex < stages.length - 1 ? stages[currentIndex + 1] : null;
-  
+  const nextStepMap = {
+    'Application Received (New)': { stage: 'CV Screened & Shortlisted', label: 'Move to Shortlisted' },
+    'CV Screened & Shortlisted': { stage: 'Interview Scheduled', label: 'Move to Schedule Interview' },
+    'Interview Scheduled': { stage: 'Interview Completed (Under Evaluation)', label: 'Move to Interview Completed' },
+    'Interview Completed (Under Evaluation)': { stage: 'Final Selection (HOD Approval)', label: 'Move to Final Selection' },
+    'Final Selection (HOD Approval)': { stage: 'Offer Released', label: 'Move to Release Offer' },
+    'Offer Released': { stage: 'Offer Accepted (Pre-Onboarding)', label: 'Move to Offer Accepted' },
+    'Offer Accepted (Pre-Onboarding)': { stage: 'Candidate Joined (Closed - Won)', label: 'Move to Candidate Joined' },
+    'On Hold': { stage: 'Interview Scheduled', label: 'Resume to Interview' },
+    'Dropped / Ghosted': { stage: 'CV Screened & Shortlisted', label: 'Reactivate Candidate' },
+    'Rejected': { stage: 'CV Screened & Shortlisted', label: 'Reconsider Candidate' }
+  };
+
+  const nextStep = nextStepMap[candidate.stage];
   let html = `<div class="candidate-actions">`;
-  
-  if (['Candidate Joined (Closed - Won)', 'Rejected', 'Dropped / Ghosted'].includes(candidate.stage)) {
+
+  if (candidate.stage === 'Candidate Joined (Closed - Won)') {
     return `<div class="candidate-actions" style="align-items:center;">
-      <span style="color:#71807d; font-size:12px; font-weight:600; margin-right:4px;">${escapeHtml(candidate.stage)}</span>
+      <span style="color:#16a34a; font-size:11px; font-weight:700; background:#eaf8ef; padding:4px 8px; border-radius:4px;">🎉 Joined (Won)</span>
       <button type="button" class="candidate-edit-btn" data-id="${candidate.id}" title="Edit candidate information">✏️ Edit</button>
     </div>`;
   }
 
-  if (nextStage) {
-    html += `<button type="button" class="advance-btn" data-id="${candidate.id}" data-next="${nextStage}" style="background:#e31e2b; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Move to ${nextStage.split(' ')[0]}</button>`;
+  if (nextStep) {
+    html += `<button type="button" class="advance-btn" data-id="${candidate.id}" data-next="${nextStep.stage}" style="background:#e31e2b; color:#fff; border:none; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:700; cursor:pointer; white-space:nowrap;">▶ ${nextStep.label}</button>`;
   }
-  
-  html += `<button type="button" class="hold-btn" data-id="${candidate.id}" data-next="On Hold" style="background:#fff8e8; color:#9b6a1d; border:1px solid #f6e5bd; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Hold</button>`;
-  html += `<button type="button" class="drop-btn" data-id="${candidate.id}" data-next="Dropped / Ghosted" style="background:#f4f5f4; color:#71807d; border:1px solid #dfe7e2; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Drop</button>`;
-  html += `<button type="button" class="reject-btn" data-id="${candidate.id}" style="background:#fef2f2; color:#e53e3e; border:1px solid #fee2e2; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Reject</button>`;
+
+  if (candidate.stage !== 'On Hold') {
+    html += `<button type="button" class="hold-btn" data-id="${candidate.id}" data-next="On Hold" style="background:#fff8e8; color:#9b6a1d; border:1px solid #f6e5bd; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer;">Hold</button>`;
+  }
+  if (candidate.stage !== 'Dropped / Ghosted') {
+    html += `<button type="button" class="drop-btn" data-id="${candidate.id}" data-next="Dropped / Ghosted" style="background:#f4f5f4; color:#71807d; border:1px solid #dfe7e2; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer;">Drop</button>`;
+  }
+  if (candidate.stage !== 'Rejected') {
+    html += `<button type="button" class="reject-btn" data-id="${candidate.id}" style="background:#fef2f2; color:#e53e3e; border:1px solid #fee2e2; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer;">Reject</button>`;
+  }
   html += `<button type="button" class="candidate-edit-btn" data-id="${candidate.id}" title="Edit candidate information">✏️ Edit</button>`;
   html += `</div>`;
   return html;
@@ -2116,10 +2138,17 @@ function bindEvents() {
     candidate.screening_status = screeningStatus; 
     if (screeningStatus === 'Shortlisted') {
       moveRecordToStage(candidate, 'CV Screened & Shortlisted', 'Application Received (New)');
+      activePipelineStage = 'CV Screened & Shortlisted';
       alert(candidate.name + ' has been shortlisted and moved to the Candidate Pipeline.');
     } else if (screeningStatus === 'Hold') {
       moveRecordToStage(candidate, 'On Hold', 'Application Received (New)');
+      activePipelineStage = 'On Hold';
     }
+    fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(candidate)
+    }).catch(err => console.error('PUT screening candidate error:', err));
     save(); render(); 
   });
   document.querySelectorAll('.vacancy-workflow-tab').forEach(button => button.onclick = () => { activeVacancyStage = button.dataset.stage; render(); });
@@ -2737,15 +2766,47 @@ function openStageUpdate(candidateId, nextStage, select, onSave) {
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
   const fields = needsInterview ? '<label>Interview date<input type="date" name="interview_date" required></label><label>Interview time<input type="time" name="interview_time" required></label><label>Interviewer name<input name="interviewer" required></label>' : needsEvaluation ? '<label>Interview rating (out of 10)<input type="number" name="interview_rating" min="0" max="10" required></label><label>Interview remarks<textarea name="interview_remarks" rows="3" required></textarea></label>' : needsOffer ? '<label>Offer release date<input type="date" name="offer_date" required></label><label>Offered CTC<input type="number" name="offered_ctc" required></label>' : needsJoining ? '<label>Expected joining date<input type="date" name="joining_date" required></label>' : '<label>Reason for rejection<select name="rejection_reason" required><option value="">Select reason</option><option>High salary expectation</option><option>Lack of skills</option><option>Culture fit</option><option>Notice period</option><option>Other</option></select></label>';
-  modal.innerHTML = `<form class="modal stage-update-modal"><button type="button" class="modal-close">×</button><span class="section-kicker">PIPELINE UPDATE</span><h2>${nextStage}</h2><p class="modal-subtitle">${candidate.name} · ${candidate.role}</p>${fields}<label>Next action<input name="next_action" value="${candidate.next_action || ''}" placeholder="e.g. Call candidate for confirmation"></label><label>Next action due date<input type="date" name="next_action_date" value="${candidate.next_action_date || ''}"></label><label>Additional remarks<textarea name="remarks" rows="2">${candidate.remarks || ''}</textarea></label><button class="primary" type="submit">Save stage update</button></form>`;
+  modal.innerHTML = `<form class="modal stage-update-modal"><button type="button" class="modal-close">×</button><span class="section-kicker">PIPELINE UPDATE</span><h2>${escapeHtml(nextStage)}</h2><p class="modal-subtitle">${escapeHtml(candidate.name)} · ${escapeHtml(candidate.role)}</p>${fields}<label>Next action<input name="next_action" value="${escapeHtml(candidate.next_action || '')}" placeholder="e.g. Call candidate for confirmation"></label><label>Next action due date<input type="date" name="next_action_date" value="${escapeHtml(candidate.next_action_date || '')}"></label><label>Additional remarks<textarea name="remarks" rows="2" placeholder="Add remarks or notes for this stage update...">${escapeHtml(candidate.remarks || '')}</textarea></label><button class="primary" type="submit">Save stage update</button></form>`;
   mountModal(modal);
-  const close = () => { if (select) select.value = candidate.screening_status || candidate.stage; modal.remove(); };
+  const close = () => { if (select) select.value = candidate.stage || candidate.screening_status; modal.remove(); };
   modal.querySelector('.modal-close').onclick = close;
-  modal.querySelector('form').onsubmit = event => { event.preventDefault(); const values = new FormData(event.target); Object.assign(candidate, Object.fromEntries(values)); if (onSave) onSave(); updateCandidateStage(candidate, nextStage); modal.remove(); };
+  modal.querySelector('form').onsubmit = event => {
+    event.preventDefault();
+    const values = new FormData(event.target);
+    const formEntries = Object.fromEntries(values);
+    if (formEntries.interview_rating) {
+      formEntries.interview_rating = Number(formEntries.interview_rating);
+    }
+    const newRemarks = formEntries.remarks?.trim();
+    if (newRemarks && newRemarks !== (candidate.remarks || '').trim()) {
+      candidate.remarks_history = candidate.remarks_history || [];
+      candidate.remarks_history.push({
+        text: newRemarks,
+        author: currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter',
+        stage: nextStage,
+        created_at: new Date().toISOString()
+      });
+    }
+    Object.assign(candidate, formEntries);
+    if (onSave) onSave();
+    updateCandidateStage(candidate, nextStage);
+    modal.remove();
+  };
 }
 
 function updateCandidateStage(candidate, nextStage) {
   moveRecordToStage(candidate, nextStage, 'Application Received (New)');
+  
+  if (nextStage === 'Rejected') {
+    candidate.screening_status = 'Rejected';
+  } else if (nextStage === 'On Hold') {
+    candidate.screening_status = 'Hold';
+  } else if (nextStage === 'Dropped / Ghosted') {
+    candidate.screening_status = 'Hold';
+  } else if (nextStage !== 'Application Received (New)') {
+    candidate.screening_status = 'Shortlisted';
+  }
+
   if (nextStage === 'Candidate Joined (Closed - Won)') {
     const vacancy = data.vacancies.find(item => item.id === candidate.requirement_id || item.title === candidate.role);
     if (vacancy) {
@@ -2754,6 +2815,19 @@ function updateCandidateStage(candidate, nextStage) {
       vacancy.filledOn = new Date().toISOString().split('T')[0];
     }
   }
+
+  // Switch active tab in pipeline so the moved candidate is immediately visible!
+  if (nextStage !== 'Application Received (New)') {
+    activePipelineStage = nextStage;
+  }
+
+  // Direct PUT to persist candidate in MongoDB immediately
+  fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(candidate)
+  }).catch(err => console.error('PUT candidate stage update error:', err));
+
   save();
   render();
 }
@@ -2779,34 +2853,51 @@ function openModal(type, preselectedRequirementId = '') {
     
     // Candidate fields HTML
     const candidateHtml = `
-      <label>Requirement ID (Link to Vacancy)
-        <select name="requirement_id" required>
-          <option value="">Select an open vacancy...</option>
-          ${data.vacancies.filter(v => v.status === 'Open').map(v => "<option value='" + v.id + "' " + (sameFilterValue(v.id, preselectedRequirementId) ? "selected" : "") + ">" + v.id + " - " + v.title + " (" + v.department + ")</option>").join('')}
-        </select>
-      </label>
-      <label>Candidate ID<input value="CAN-${new Date().getFullYear()}-${String(data.candidates.length + 1).padStart(4, '0')}" disabled></label>
       <div class="form-grid">
-        <label>Candidate Name<input name="name" required></label>
+        <label>Linked Vacancy / Requirement
+          <select name="requirement_id" id="modal-candidate-req-select">
+            <option value="">-- General Application (No Vacancy Link) --</option>
+            ${data.vacancies.map(v => "<option value='" + v.id + "' " + (sameFilterValue(v.id, preselectedRequirementId) ? "selected" : "") + ">" + v.id + " - " + v.title + " (" + v.department + ") [" + v.status + "]</option>").join('')}
+          </select>
+        </label>
+        <label>Applied Role / Position Title *
+          <input name="role" id="modal-candidate-role-input" required placeholder="e.g. Sales Executive">
+        </label>
+      </div>
+      <div class="form-grid">
+        <label>Candidate Full Name *<input name="name" required placeholder="Candidate full name"></label>
+        <label>Mobile Number *<input type="tel" name="phone" required placeholder="10-digit mobile number"></label>
+        <label>Email ID<input type="email" name="email" placeholder="candidate@example.com"></label>
         <label>Gender<select name="gender"><option>Male</option><option>Female</option><option>Other</option></select></label>
         <label>Date of Birth<input type="date" name="dob"></label>
-        <label>Mobile Number<input type="tel" name="phone" required></label>
-        <label>Email ID<input type="email" name="email"></label>
         <label>Marital Status<select name="marital_status"><option>Single</option><option>Married</option><option>Other</option></select></label>
       </div>
-      <label>Residential Address<textarea name="address" rows="2"></textarea></label>
+      <label>Residential Address<textarea name="address" rows="2" placeholder="Full residential address"></textarea></label>
       <div class="form-grid">
-        <label>Current Location of Job<input name="location"></label>
-        <label>Current Salary (CTC)<input type="number" name="current_ctc"></label>
-        <label>Expected Salary<input type="number" name="expected_ctc"></label>
-        <label>Notice Period (in days)<input type="number" name="notice_period"></label>
-        <label>Total Working Experience (Years)<input type="number" step="0.1" name="experience_years"></label>
-        <label>Platform applied through (Source)<select name="source"><option value="">Select (Optional)...</option><option>Apna</option><option>LinkedIn</option><option>Indeed</option><option>Naukri</option><option>Facebook</option><option>Referral</option><option>Consultant</option><option>Walk-in</option><option>Other</option></select></label>
+        <label>Current Location / City<input name="location" placeholder="e.g. Mumbai, Delhi"></label>
+        <label>Current Salary (CTC ₹)<input type="number" name="current_ctc" placeholder="e.g. 350000"></label>
+        <label>Expected Salary (CTC ₹)<input type="number" name="expected_ctc" placeholder="e.g. 450000"></label>
+        <label>Notice Period (Days)<input type="number" name="notice_period" placeholder="e.g. 15 or 30"></label>
+        <label>Total Working Experience (Years)<input type="number" step="0.1" name="experience_years" placeholder="e.g. 2.5"></label>
+        <label>Platform Applied Through (Source)
+          <select name="source">
+            <option value="Direct">Direct Application</option>
+            <option>Apna</option>
+            <option>LinkedIn</option>
+            <option>Indeed</option>
+            <option>Naukri</option>
+            <option>Facebook</option>
+            <option>Referral</option>
+            <option>Consultant</option>
+            <option>Walk-in</option>
+            <option>Other</option>
+          </select>
+        </label>
       </div>
-      <label>Top Skills<input name="skills" placeholder="e.g. Sales, Marketing, AutoCAD"></label>
-      <label>Referred By / Consultant Name<input name="referrer"></label>
-      <label>Attach CV/Resume<input type="file" name="cv" accept=".pdf,.doc,.docx"></label>
-      <label>Any Other Information<textarea name="remarks" rows="2"></textarea></label>
+      <label>Top Skills & Competencies<input name="skills" placeholder="e.g. Sales, Marketing, Negotiation, Excel"></label>
+      <label>Referred By / Consultant Name<input name="referrer" placeholder="Referral person or agency name"></label>
+      <label>Attach CV / Resume<input type="file" name="cv" accept=".pdf,.doc,.docx"></label>
+      <label>Remarks / Notes<textarea name="remarks" rows="2" placeholder="Initial recruiter notes, observations, or screening comments..."></textarea></label>
     `;
 
     const vacancyHtml = `<label>Date of Opening<input value="${new Date().toISOString().split('T')[0]}" disabled></label><label>Position Code<input placeholder="(Autofill)" disabled></label><label>Job Title<select name="title">${positions.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Department<select name="department">${departments.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Location<select name="location">${locations.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Priority<select name="priority">${priorities.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Job Description<input type="file" name="jd" accept=".pdf,.doc,.docx"></label><label>Minimum Experience<select name="experience">${experiences.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Salary Range<select name="salary">${salaries.map(p => "<option>" + p + "</option>").join('')}</select></label><label>Deadline<input type="date" name="deadline" required></label><label>Employee Responsible To<select name="owner">${managers.map(p => "<option>" + p + "</option>").join('')}</select></label>`;
@@ -2822,6 +2913,21 @@ function openModal(type, preselectedRequirementId = '') {
     
     mountModal(modal);
     modal.querySelector('.modal-close').onclick = () => modal.remove();
+
+    // Auto-populate role when vacancy changes in candidate form
+    const reqSelect = modal.querySelector('#modal-candidate-req-select');
+    const roleInput = modal.querySelector('#modal-candidate-role-input');
+    if (reqSelect && roleInput) {
+      const fillRole = () => {
+        const v = data.vacancies.find(item => item.id === reqSelect.value);
+        if (v && (!roleInput.value || data.vacancies.some(x => x.title === roleInput.value))) {
+          roleInput.value = v.title;
+        }
+      };
+      if (reqSelect.value) fillRole();
+      reqSelect.onchange = fillRole;
+    }
+
     const bulkSwitchBtn = modal.querySelector('#modal-switch-to-bulk');
     if (bulkSwitchBtn) {
       bulkSwitchBtn.onclick = () => {
@@ -2857,7 +2963,7 @@ function openModal(type, preselectedRequirementId = '') {
         }
 
         const createdAt = nowIso();
-        data.vacancies.unshift({
+        const newVac = {
           id: `${form.get('department').substring(0, 2).toUpperCase()}-${form.get('title').split(/[\s-]+/).filter(w => w).map(w => w[0]).join('').toUpperCase()}-${String(data.vacancies.length + 1).padStart(2, '0')}`,
           title: form.get('title'),
           department: form.get('department'),
@@ -2876,12 +2982,30 @@ function openModal(type, preselectedRequirementId = '') {
           stage_history: [],
           stage_timestamps: { 'Manpower Requirement Raised': { entered_at: createdAt } },
           jd_url: jd_url
-        });
+        };
+        data.vacancies.unshift(newVac);
         activeVacancyStage = 'Manpower Requirement Raised';
+        fetch(`${API_BASE}/api/vacancies`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newVac)
+        }).catch(err => console.error('Save vacancy error:', err));
       } else {
-        const reqId = form.get('requirement_id');
-        const phone = form.get('phone');
-        const email = form.get('email');
+        const reqId = form.get('requirement_id') || '';
+        const name = form.get('name')?.trim();
+        const phone = form.get('phone')?.trim();
+        const email = form.get('email')?.trim();
+        const role = form.get('role')?.trim() || 'General';
+
+        if (!name || !phone) {
+          alert('Please fill in candidate Name and Mobile Number.');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save record';
+          }
+          return;
+        }
+
         const normPhone = normalizePhone(phone);
         const normEmail = normalizeEmail(email);
 
@@ -2924,29 +3048,63 @@ function openModal(type, preselectedRequirementId = '') {
         }
 
         const createdAt = nowIso();
-        data.candidates.unshift({
-          id: `CAN-${new Date().getFullYear()}-${String(data.candidates.length + 1).padStart(4, '0')}`,
-          requirement_id: reqId,
-          name: form.get('name'),
-          role: linkedVacancy ? linkedVacancy.title : 'Not Specified',
-          phone: form.get('phone'),
-          email: form.get('email'),
+        const maxNum = data.candidates.reduce((max, c) => {
+          const m = String(c.id || '').match(/CAN-\d+-(\d+)/);
+          if (m) {
+            const n = parseInt(m[1], 10);
+            return n > max ? n : max;
+          }
+          return max;
+        }, 0);
+        const newId = `CAN-${new Date().getFullYear()}-${String(maxNum + 1).padStart(4, '0')}`;
+        const remarksText = form.get('remarks')?.trim() || '';
+
+        const newCandidate = {
+          id: newId,
+          requirement_id: reqId || (linkedVacancy ? linkedVacancy.id : 'GENERAL'),
+          name,
+          role,
+          phone,
+          email,
+          gender: form.get('gender') || 'Other',
+          dob: form.get('dob') || '',
+          marital_status: form.get('marital_status') || 'Single',
+          address: form.get('address')?.trim() || '',
+          location: form.get('location')?.trim() || '',
+          current_ctc: form.get('current_ctc')?.trim() || '',
+          expected: form.get('expected_ctc')?.trim() || '',
+          notice_period: form.get('notice_period') ? `${form.get('notice_period')} Days` : '',
+          experience: form.get('experience_years') ? `${form.get('experience_years')} Years` : '',
           source: form.get('source') || 'Direct',
-          location: form.get('location'),
-          experience: form.get('experience_years') ? form.get('experience_years') + ' Years' : 'Not specified',
-          expected: form.get('expected_ctc') || 'Not specified',
-          notice_period: form.get('notice_period') ? form.get('notice_period') + ' Days' : '',
+          skills: form.get('skills')?.trim() || '',
+          referrer: form.get('referrer')?.trim() || '',
+          remarks: remarksText,
+          remarks_history: remarksText ? [{
+            text: remarksText,
+            author: currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter',
+            stage: 'Application Received (New)',
+            created_at: createdAt
+          }] : [],
           stage: 'Application Received (New)',
           screening_status: 'Pending Review',
           timestamp: createdAt,
           stage_updated_at: createdAt,
           stage_history: [],
           stage_timestamps: { 'Application Received (New)': { entered_at: createdAt } },
-          reason_for_leaving: form.get('reason_for_leaving'),
-          remarks: form.get('remarks'),
           cv_url: cv_url
-        });
-        if(linkedVacancy) linkedVacancy.applications++;
+        };
+
+        data.candidates.unshift(newCandidate);
+        if (linkedVacancy) {
+          linkedVacancy.applications = (linkedVacancy.applications || 0) + 1;
+        }
+
+        // Direct POST to backend candidate endpoint
+        fetch(`${API_BASE}/api/candidates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newCandidate)
+        }).catch(err => console.error('Save candidate API error:', err));
       }
       save();
       modal.remove();
