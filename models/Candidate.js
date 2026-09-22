@@ -42,6 +42,7 @@ const candidateSchema = new mongoose.Schema({
   address: { type: String },
   referrer: { type: String },
   remarks: { type: String },
+  contacted_date: { type: String },
   remarks_history: [remarkHistorySchema],
   screening_status: { type: String, default: 'Pending Review' },
   stage: { type: String, default: 'Application Received (New)' },

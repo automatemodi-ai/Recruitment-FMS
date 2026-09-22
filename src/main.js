@@ -1219,7 +1219,7 @@ function candidates(list) {
     const screeningSummary = filters.screening.screening_status ? `${rows.length} ${filters.screening.screening_status} application${rows.length === 1 ? '' : 's'}` : `${rows.length} applications pending review`;
     return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add application</button></div></div>
     ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true, screeningStatus: true })}
-    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
+    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
       <option ${item.screening_status === 'Shortlisted' ? 'selected' : ''}>Shortlisted</option>
       <option ${item.screening_status === 'Rejected' ? 'selected' : ''}>Rejected</option>
@@ -1255,7 +1255,7 @@ function candidates(list) {
     return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${pipelineCandidates.length} active candidates in pipeline</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add Candidate</button></div></div>
     ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true })}
     ${tabsHtml}
-    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
+    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
     <td>
       ${renderActionButtons(item)}
     </td></tr>`).join('')}
@@ -2268,6 +2268,7 @@ function openCandidateDetails(candidateId) {
       <div class="detail-section">
         <h3>Application details</h3>
         <div class="detail-grid">
+          ${detail('Contacted / Outreach Date', candidate.contacted_date)}
           ${detail('Applied position', candidate.role)}
           ${detail('Requirement ID', candidate.requirement_id)}
           ${detail('Source / platform', candidate.source)}
@@ -2407,6 +2408,7 @@ function openEditCandidateModal(candidateId) {
             </select>
           </label>
           <label>Current Location / City<input name="location" value="${escapeHtml(candidate.location || '')}" placeholder="e.g. Mumbai, Delhi, Remote"></label>
+          <label>Contacted / Outreach Date<input name="contacted_date" value="${escapeHtml(candidate.contacted_date || '')}" placeholder="e.g. 07/11/2025"></label>
           <label>Residential Address<input name="address" value="${escapeHtml(candidate.address || '')}" placeholder="Full residential address"></label>
         </div>
       </div>
@@ -2657,6 +2659,7 @@ function openEditCandidateModal(candidateId) {
     candidate.dob = form.get('dob') || candidate.dob;
     candidate.marital_status = form.get('marital_status') || candidate.marital_status;
     candidate.location = form.get('location') || candidate.location;
+    candidate.contacted_date = form.get('contacted_date') !== null ? form.get('contacted_date').trim() : candidate.contacted_date;
     candidate.address = form.get('address') || candidate.address;
     candidate.role = form.get('role') || candidate.role;
     candidate.source = form.get('source') || candidate.source;
@@ -2867,6 +2870,7 @@ function openModal(type, preselectedRequirementId = '') {
       <div class="form-grid">
         <label>Candidate Full Name *<input name="name" required placeholder="Candidate full name"></label>
         <label>Mobile Number *<input type="tel" name="phone" required placeholder="10-digit mobile number"></label>
+        <label>Contacted / Ping Date<input name="contacted_date" placeholder="e.g. 07/11/2025" value="${new Date().toLocaleDateString('en-GB')}"></label>
         <label>Email ID<input type="email" name="email" placeholder="candidate@example.com"></label>
         <label>Gender<select name="gender"><option>Male</option><option>Female</option><option>Other</option></select></label>
         <label>Date of Birth<input type="date" name="dob"></label>
@@ -3065,6 +3069,7 @@ function openModal(type, preselectedRequirementId = '') {
           name,
           role,
           phone,
+          contacted_date: form.get('contacted_date')?.trim() || '',
           email,
           gender: form.get('gender') || 'Other',
           dob: form.get('dob') || '',
@@ -3121,6 +3126,7 @@ function downloadCandidateTemplate(format = 'xlsx') {
     {
       "Candidate Name": "Rahul Sharma",
       "Mobile Number": "9876543210",
+      "Contacted Date": "07/11/2025",
       "Email ID": "rahul.sharma@example.com",
       "Vacancy ID": defaultVacancy.id || "OP-PC-01",
       "Role / Job Title": defaultVacancy.title || "Production Planner / Order Manager",
@@ -3140,6 +3146,7 @@ function downloadCandidateTemplate(format = 'xlsx') {
     {
       "Candidate Name": "Pooja Verma",
       "Mobile Number": "9812345678",
+      "Contacted Date": "08/11/2025",
       "Email ID": "pooja.v@example.com",
       "Vacancy ID": secondVacancy.id || "",
       "Role / Job Title": secondVacancy.title || "Sales Executive - Retail",
@@ -3160,7 +3167,7 @@ function downloadCandidateTemplate(format = 'xlsx') {
 
   const worksheet = XLSX.utils.json_to_sheet(sampleData);
   const colWidths = [
-    { wch: 18 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 32 },
+    { wch: 18 }, { wch: 15 }, { wch: 16 }, { wch: 25 }, { wch: 15 }, { wch: 32 },
     { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 15 },
     { wch: 30 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 25 },
     { wch: 18 }, { wch: 25 }
@@ -3412,6 +3419,7 @@ function openBulkCandidateModal() {
         phone = String(Number(phone));
       }
       const email = norm['emailid'] || norm['email'] || norm['mail'] || '';
+      const contacted_date = norm['contacteddate'] || norm['contactdate'] || norm['pingdate'] || norm['calldate'] || norm['dateofcontact'] || norm['date'] || '';
       const vacancyId = norm['vacancyid'] || norm['requirementid'] || norm['reqid'] || norm['jobid'] || '';
       const role = norm['rolejobtitle'] || norm['role'] || norm['jobtitle'] || norm['position'] || norm['appliedrole'] || norm['designation'] || '';
       const experience = norm['totalexperience'] || norm['experience'] || norm['exp'] || norm['workingexperience'] || norm['workexp'] || norm['experienceyears'] || '';
@@ -3472,6 +3480,7 @@ function openBulkCandidateModal() {
       parsedRows.push({
         name,
         phone,
+        contacted_date,
         email,
         requirement_id: vacancyId,
         role,
@@ -3594,6 +3603,7 @@ function openBulkCandidateModal() {
         name: row.name,
         role,
         phone: row.phone,
+        contacted_date: row.contacted_date || '',
         email: row.email,
         source,
         location: row.location,
