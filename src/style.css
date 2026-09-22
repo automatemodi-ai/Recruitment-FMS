@@ -1146,3 +1146,160 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
     align-items: center;
   }
 }
+
+/* Candidate Edit & Remarks System Styles */
+.candidate-edit-btn, .candidate-remark-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  white-space: nowrap;
+}
+.candidate-edit-btn {
+  background: #f0f7f4;
+  color: #176049;
+  border: 1px solid #bce1d3;
+}
+.candidate-edit-btn:hover {
+  background: #e1f2ec;
+  border-color: #176049;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(23, 96, 73, 0.12);
+}
+.candidate-remark-btn {
+  background: #fff9ec;
+  color: #8c5a0e;
+  border: 1px solid #fae4be;
+}
+.candidate-remark-btn:hover {
+  background: #fef1d6;
+  border-color: #c98214;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 5px rgba(140, 90, 14, 0.12);
+}
+
+.edit-candidate-modal {
+  width: min(860px, 100%);
+  max-width: 860px;
+}
+.modal-tabs {
+  display: flex;
+  gap: 6px;
+  background: #edf3f0;
+  padding: 4px;
+  border-radius: 7px;
+  margin: 4px 0 16px;
+  overflow-x: auto;
+}
+.modal-tab-btn {
+  flex: 1;
+  min-width: 110px;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: #63756e;
+  font-weight: 600;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.modal-tab-btn.active {
+  background: #fff;
+  color: var(--green);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.edit-section-card {
+  background: #fcfdfe;
+  border: 1px solid #e2ece7;
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  display: grid;
+  gap: 12px;
+}
+.edit-section-card:last-child {
+  margin-bottom: 0;
+}
+.edit-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #243530;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #edf4f1;
+}
+.cv-preview-box {
+  background: #f4f9f7;
+  border: 1px dashed #b8ded0;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.remarks-modal {
+  width: min(620px, 100%);
+  max-width: 620px;
+}
+.remarks-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.remarks-feed::-webkit-scrollbar {
+  width: 5px;
+}
+.remarks-feed::-webkit-scrollbar-thumb {
+  background: #c3dad0;
+  border-radius: 4px;
+}
+.remark-card {
+  background: #fcfdfc;
+  border: 1px solid #e2ede8;
+  border-left: 3px solid var(--green);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 12px;
+}
+.remark-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.remark-meta strong {
+  color: #2c423b;
+}
+.remark-text {
+  margin: 0;
+  line-height: 1.5;
+  color: #313e3a;
+  white-space: pre-wrap;
+}
+.inline-remark-box {
+  background: #f5f9f7;
+  border: 1px solid #daeae3;
+  border-radius: 8px;
+  padding: 14px;
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}

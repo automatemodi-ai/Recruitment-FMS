@@ -933,6 +933,8 @@ router.post('/candidates', upload.single('cv'), async (req, res) => {
       }
     }
 
+    const existingRecord = await Candidate.findOne({ id: candidateData.id }).lean();
+
     if (req.file) {
       const uploadResult = await uploadStreamToCloudinary(req.file.buffer, 'recruitment_fms/cvs', req.file.originalname);
       candidateData.cv_url = uploadResult.secure_url;
@@ -945,8 +947,8 @@ router.post('/candidates', upload.single('cv'), async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
-    // Increment vacancy application count if new candidate
-    if (candidateData.requirement_id) {
+    // Increment vacancy application count only if genuinely new candidate
+    if (!existingRecord && candidateData.requirement_id) {
       await Vacancy.findOneAndUpdate(
         { id: candidateData.requirement_id },
         { $inc: { applications: 1 } }
@@ -956,6 +958,134 @@ router.post('/candidates', upload.single('cv'), async (req, res) => {
     res.json({ message: 'Candidate saved successfully', candidate: updated });
   } catch (error) {
     console.error('Error saving candidate:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5.05 Edit / Update Candidate Information at Any Stage
+router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
+  try {
+    const candidateId = req.params.id;
+    const updateData = { ...req.body };
+
+    const existing = await Candidate.findOne({ id: candidateId });
+    if (!existing) {
+      return res.status(404).json({ error: `Candidate ${candidateId} not found` });
+    }
+
+    // Parse remarks_history if provided as JSON string
+    if (typeof updateData.remarks_history === 'string') {
+      try {
+        updateData.remarks_history = JSON.parse(updateData.remarks_history);
+      } catch {
+        delete updateData.remarks_history;
+      }
+    }
+
+    // Parse stage_history and stage_timestamps if provided as JSON string
+    if (typeof updateData.stage_history === 'string') {
+      try { updateData.stage_history = JSON.parse(updateData.stage_history); } catch {}
+    }
+    if (typeof updateData.stage_timestamps === 'string') {
+      try { updateData.stage_timestamps = JSON.parse(updateData.stage_timestamps); } catch {}
+    }
+
+    // Check duplicate phone or email against other candidates
+    if (updateData.phone || updateData.email) {
+      const duplicate = await findDuplicateCandidate({
+        phone: updateData.phone,
+        email: updateData.email,
+        excludeId: candidateId
+      });
+      if (duplicate) {
+        const fieldDesc = duplicate.field === 'phone' ? 'phone number' : duplicate.field === 'email' ? 'email address' : 'phone number or email';
+        return res.status(409).json({
+          error: `Another candidate with this ${fieldDesc} already exists in the system (${duplicate.candidate.name} - ${duplicate.candidate.id}).`,
+          duplicateField: duplicate.field,
+          candidateId: duplicate.candidate.id
+        });
+      }
+    }
+
+    // Handle CV file replacement if new file uploaded
+    if (req.file) {
+      const uploadResult = await uploadStreamToCloudinary(req.file.buffer, 'recruitment_fms/cvs', req.file.originalname);
+      updateData.cv_url = uploadResult.secure_url;
+      updateData.cv_public_id = uploadResult.public_id;
+    }
+
+    // Adjust vacancy counts if requirement_id was changed
+    if (updateData.requirement_id && updateData.requirement_id !== existing.requirement_id) {
+      if (existing.requirement_id) {
+        await Vacancy.findOneAndUpdate(
+          { id: existing.requirement_id, applications: { $gt: 0 } },
+          { $inc: { applications: -1 } }
+        );
+      }
+      await Vacancy.findOneAndUpdate(
+        { id: updateData.requirement_id },
+        { $inc: { applications: 1 } }
+      );
+    }
+
+    // Append new remark note if provided in payload
+    if (updateData.new_remark && String(updateData.new_remark).trim()) {
+      const remarkNote = {
+        text: String(updateData.new_remark).trim(),
+        author: updateData.remark_author || 'Recruiter',
+        stage: updateData.stage || existing.stage || 'General',
+        created_at: new Date()
+      };
+      if (!updateData.remarks_history) {
+        updateData.remarks_history = existing.remarks_history || [];
+      }
+      updateData.remarks_history.push(remarkNote);
+      delete updateData.new_remark;
+      delete updateData.remark_author;
+    }
+
+    const updated = await Candidate.findOneAndUpdate(
+      { id: candidateId },
+      { $set: updateData },
+      { new: true }
+    );
+
+    res.json({ message: 'Candidate updated successfully', candidate: updated });
+  } catch (error) {
+    console.error('Error updating candidate:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5.06 Quick Add Candidate Remark / Note
+router.post('/candidates/:id/remarks', async (req, res) => {
+  try {
+    const candidateId = req.params.id;
+    const { text, author, stage } = req.body;
+    if (!text || !String(text).trim()) {
+      return res.status(400).json({ error: 'Remark text cannot be empty' });
+    }
+
+    const candidate = await Candidate.findOne({ id: candidateId });
+    if (!candidate) {
+      return res.status(404).json({ error: `Candidate ${candidateId} not found` });
+    }
+
+    const newEntry = {
+      text: String(text).trim(),
+      author: author || 'Recruiter',
+      stage: stage || candidate.stage || 'General',
+      created_at: new Date()
+    };
+
+    candidate.remarks_history = candidate.remarks_history || [];
+    candidate.remarks_history.push(newEntry);
+    candidate.remarks = String(text).trim(); // Update current remarks
+    await candidate.save();
+
+    res.json({ message: 'Remark added successfully', candidate });
+  } catch (error) {
+    console.error('Error adding candidate remark:', error);
     res.status(500).json({ error: error.message });
   }
 });

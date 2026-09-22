@@ -15,6 +15,13 @@ const stageTimestampSchema = new mongoose.Schema({
   completed_at: { type: Date }
 }, { _id: false });
 
+const remarkHistorySchema = new mongoose.Schema({
+  text: { type: String, required: true },
+  author: { type: String, default: 'Recruiter' },
+  stage: { type: String },
+  created_at: { type: Date, default: Date.now }
+}, { _id: false });
+
 const candidateSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true, index: true },
   requirement_id: { type: String, required: true, index: true },
@@ -35,6 +42,7 @@ const candidateSchema = new mongoose.Schema({
   address: { type: String },
   referrer: { type: String },
   remarks: { type: String },
+  remarks_history: [remarkHistorySchema],
   screening_status: { type: String, default: 'Pending Review' },
   stage: { type: String, default: 'Application Received (New)' },
   stage_updated_at: { type: Date, default: Date.now },
