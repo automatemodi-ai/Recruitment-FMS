@@ -280,6 +280,15 @@ nav { display:grid; gap:6px; } .nav-item { color:#9ca3af; background:transparent
   padding: 5px 10px;
   border-radius: 20px;
   border: 1px solid #dbeae3;
+  color: var(--ink);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+.user-badge:hover {
+  background: #e8f4ee;
+  border-color: #b9ded0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .user-badge-role {

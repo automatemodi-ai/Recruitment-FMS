@@ -130,7 +130,7 @@ function renderLogin() {
       localStorage.setItem('recruitment_fms_auth', JSON.stringify(currentUser));
       initApp();
       fetchData();
-      if (currentUser.role === 'Superadmin' || currentUser.role === 'Admin') fetchUsers();
+      fetchUsers();
     } catch (err) {
       errEl.textContent = err.message || 'Login failed. Please check your credentials.';
       errEl.style.display = 'block';
@@ -162,9 +162,7 @@ function initApp() {
         <button class="nav-item ${activeView === 'CV Screening' ? 'active' : ''}" data-view="CV Screening"><span class="nav-icon">◇</span> CV Screening</button>
         <button class="nav-item ${activeView === 'Candidates' ? 'active' : ''}" data-view="Candidates"><span class="nav-icon">◒</span> Candidate Pipeline</button>
         <button class="nav-item ${activeView === 'Reports' ? 'active' : ''}" data-view="Reports"><span class="nav-icon">📊</span> Reports</button>
-        ${currentUser && (currentUser.role === 'Superadmin' || currentUser.role === 'Admin') ? `
         <button class="nav-item ${activeView === 'Users' ? 'active' : ''}" data-view="Users"><span class="nav-icon">👥</span> Users</button>
-        ` : ''}
       </nav>
       <div class="sidebar-bottom">
         <div class="sync-dot"></div>
@@ -191,10 +189,10 @@ function initApp() {
           <button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate" title="Bulk Import Candidates from Excel or CSV">📥 Bulk Upload</button>
           <button class="primary" data-action="new-candidate">+ Add Candidate</button>
           <div class="user-profile-bar">
-            <div class="user-badge" title="${escapeHtml(currentUser.email || '')}">
+            <button type="button" class="user-badge user-badge-btn" data-view="Users" title="Manage Users & Staff (${escapeHtml(currentUser.email || '')})">
               <span>👤 <b>${escapeHtml(currentUser.name || (currentUser.email ? currentUser.email.split('@')[0] : 'User'))}</b></span>
               <span class="user-badge-role">${escapeHtml(currentUser.role || 'Admin')}</span>
-            </div>
+            </button>
             <button type="button" class="logout-btn" id="logout-btn" title="Sign out of Recruitment FMS">
               <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
               Logout
@@ -1956,7 +1954,7 @@ async function fetchUsers() {
 }
 
 function usersView() {
-  const isSuper = currentUser && currentUser.role === 'Superadmin';
+  const isSuper = !currentUser || !currentUser.role || currentUser.role === 'Superadmin' || currentUser.role === 'Admin';
   return `<div class="page-intro">
     <div>
       <span class="section-kicker">USER MANAGEMENT</span>
