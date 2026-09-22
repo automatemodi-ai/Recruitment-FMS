@@ -803,13 +803,16 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   font-weight: 700;
   color: var(--muted);
 }
-.bulk-config-grid select {
+.bulk-config-grid select,
+.bulk-config-grid input {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 6px;
   font-size: 12px;
   background: #fff;
+  color: var(--text, #1a202c);
+  font-family: inherit;
 }
 .bulk-dropzone {
   border: 2px dashed #b8d4c9;

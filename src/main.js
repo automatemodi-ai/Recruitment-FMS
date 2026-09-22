@@ -3238,6 +3238,10 @@ function openBulkCandidateModal() {
           </select>
         </label>
         <label>
+          Contacted / Outreach Date (Default)
+          <input type="date" id="bulk-date-input" value="${new Date().toISOString().split('T')[0]}" title="Default contact date for candidates if not specified in the file" />
+        </label>
+        <label>
           Default Source (If blank in sheet)
           <select id="bulk-source-select">
             <option value="Bulk Import" selected>Bulk Import</option>
@@ -3280,6 +3284,7 @@ function openBulkCandidateModal() {
                 <th>Status</th>
                 <th>Candidate Name</th>
                 <th>Phone</th>
+                <th>Contacted Date</th>
                 <th>Email</th>
                 <th>Role / Vacancy</th>
                 <th>Experience</th>
@@ -3525,11 +3530,25 @@ function openBulkCandidateModal() {
     submitBtn.disabled = rowsToImport.length === 0;
     submitBtn.textContent = rowsToImport.length > 0 ? `Import ${rowsToImport.length} Candidate(s)` : 'Import Candidates';
 
-    previewTbody.innerHTML = parsedRows.map(r => `
+    const formatDisplayDate = str => {
+      if (!str) return '';
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [y, m, d] = str.split('-');
+        return `${d}/${m}/${y}`;
+      }
+      return str;
+    };
+    const defaultDateVal = modal.querySelector('#bulk-date-input')?.value || '';
+    const formattedDefaultDate = formatDisplayDate(defaultDateVal);
+
+    previewTbody.innerHTML = parsedRows.map(r => {
+      const displayDate = r.contacted_date ? formatDisplayDate(r.contacted_date) : (formattedDefaultDate || '-');
+      return `
       <tr style="${!r.isValid ? 'background:#fff9f8;' : ''}">
         <td><span class="bulk-status-badge ${r.statusClass}">${escapeHtml(r.statusMsg)}</span></td>
         <td><strong>${escapeHtml(r.name || '(Blank)')}</strong></td>
         <td>${escapeHtml(r.phone || '(Blank)')}</td>
+        <td><span style="font-weight:600; color:#176049;">${escapeHtml(displayDate)}</span></td>
         <td>${escapeHtml(r.email || '-')}</td>
         <td>${escapeHtml(r.role || r.requirement_id || '-')}</td>
         <td>${escapeHtml(r.experience || '-')}</td>
@@ -3539,16 +3558,22 @@ function openBulkCandidateModal() {
         <td>${escapeHtml(r.source || '-')}</td>
         <td>${escapeHtml(r.location || '-')}</td>
       </tr>
-    `).join('');
+      `;
+    }).join('');
   }
 
   skipInvalidCheckbox.addEventListener('change', updatePreviewUI);
+  const bulkDateInput = modal.querySelector('#bulk-date-input');
+  if (bulkDateInput) {
+    bulkDateInput.addEventListener('change', updatePreviewUI);
+  }
 
   // Submit Handler
   submitBtn.onclick = async () => {
     const selectedDefaultVacancy = modal.querySelector('#bulk-vacancy-select').value;
     const selectedDefaultStage = modal.querySelector('#bulk-stage-select').value;
     const selectedDefaultSource = modal.querySelector('#bulk-source-select').value;
+    const selectedDefaultDate = modal.querySelector('#bulk-date-input')?.value || '';
 
     const rowsToProcess = skipInvalidCheckbox.checked ? parsedRows.filter(r => r.isValid) : parsedRows;
     if (rowsToProcess.length === 0) {
@@ -3597,13 +3622,23 @@ function openBulkCandidateModal() {
       const screeningStatus = stage === 'CV Screened & Shortlisted' ? 'Shortlisted' : 'Pending Review';
       const source = row.source || selectedDefaultSource || 'Bulk Import';
 
+      let contactDate = row.contacted_date || '';
+      if (!contactDate && selectedDefaultDate) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(selectedDefaultDate)) {
+          const [y, m, d] = selectedDefaultDate.split('-');
+          contactDate = `${d}/${m}/${y}`;
+        } else {
+          contactDate = selectedDefaultDate;
+        }
+      }
+
       return {
         id,
         requirement_id: reqId,
         name: row.name,
         role,
         phone: row.phone,
-        contacted_date: row.contacted_date || '',
+        contacted_date: contactDate,
         email: row.email,
         source,
         location: row.location,
