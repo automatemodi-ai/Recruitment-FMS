@@ -1147,8 +1147,8 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   }
 }
 
-/* Candidate Edit & Remarks System Styles */
-.candidate-edit-btn, .candidate-remark-btn {
+/* Candidate Edit System Styles */
+.candidate-edit-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1159,8 +1159,6 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   cursor: pointer;
   transition: all 0.15s ease-in-out;
   white-space: nowrap;
-}
-.candidate-edit-btn {
   background: #f0f7f4;
   color: #176049;
   border: 1px solid #bce1d3;
@@ -1170,17 +1168,6 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   border-color: #176049;
   transform: translateY(-1px);
   box-shadow: 0 2px 5px rgba(23, 96, 73, 0.12);
-}
-.candidate-remark-btn {
-  background: #fff9ec;
-  color: #8c5a0e;
-  border: 1px solid #fae4be;
-}
-.candidate-remark-btn:hover {
-  background: #fef1d6;
-  border-color: #c98214;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 5px rgba(140, 90, 14, 0.12);
 }
 
 .edit-candidate-modal {
@@ -1250,10 +1237,6 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   gap: 12px;
   flex-wrap: wrap;
 }
-.remarks-modal {
-  width: min(620px, 100%);
-  max-width: 620px;
-}
 .remarks-feed {
   display: flex;
   flex-direction: column;
@@ -1293,13 +1276,4 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   line-height: 1.5;
   color: #313e3a;
   white-space: pre-wrap;
-}
-.inline-remark-box {
-  background: #f5f9f7;
-  border: 1px solid #daeae3;
-  border-radius: 8px;
-  padding: 14px;
-  margin-top: 10px;
-  display: grid;
-  gap: 10px;
 }

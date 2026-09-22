@@ -895,9 +895,6 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
                           <button type="button" class="candidate-edit-btn" data-id="${c.id}" style="padding: 4px 8px; font-size: 11px;">
                             ✏️ Edit
                           </button>
-                          <button type="button" class="candidate-remark-btn" data-id="${c.id}" style="padding: 4px 8px; font-size: 11px;">
-                            💬 Note
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1040,7 +1037,6 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
                 <div style="display: flex; gap: 6px; justify-content: center; align-items: center; flex-wrap: wrap;">
                   <button type="button" class="text-button" data-action="view-candidate" data-id="${c.id}" style="font-weight:700; color:var(--green); cursor:pointer;">View ↗</button>
                   <button type="button" class="candidate-edit-btn" data-id="${c.id}" style="padding: 3px 8px; font-size: 11px;">✏️ Edit</button>
-                  <button type="button" class="candidate-remark-btn" data-id="${c.id}" style="padding: 3px 8px; font-size: 11px;">💬 Note</button>
                 </div>
               </td>
             </tr>
@@ -1224,10 +1220,7 @@ function candidates(list) {
       <option ${item.screening_status === 'Hold' ? 'selected' : ''}>Hold</option>
     </select></td>
     <td>
-      <div style="display:flex; gap:6px; align-items:center;">
-        <button type="button" class="candidate-edit-btn" data-id="${item.id}" title="Edit candidate details">✏️ Edit</button>
-        <button type="button" class="candidate-remark-btn" data-id="${item.id}" title="Add or view remarks">💬 Note</button>
-      </div>
+      <button type="button" class="candidate-edit-btn" data-id="${item.id}" title="Edit candidate details">✏️ Edit</button>
     </td></tr>`).join('')}${rows.length === 0 ? `<tr><td colspan="7" style="text-align:center; padding:40px; color:#9aa6a2;">No applications match the selected filters</td></tr>` : ''}</tbody></table></section>`;
   } else {
     // Pipeline View
@@ -1276,7 +1269,6 @@ function renderActionButtons(candidate) {
     return `<div class="candidate-actions" style="align-items:center;">
       <span style="color:#71807d; font-size:12px; font-weight:600; margin-right:4px;">${escapeHtml(candidate.stage)}</span>
       <button type="button" class="candidate-edit-btn" data-id="${candidate.id}" title="Edit candidate information">✏️ Edit</button>
-      <button type="button" class="candidate-remark-btn" data-id="${candidate.id}" title="Add or view remarks">💬 Note</button>
     </div>`;
   }
 
@@ -1288,7 +1280,6 @@ function renderActionButtons(candidate) {
   html += `<button type="button" class="drop-btn" data-id="${candidate.id}" data-next="Dropped / Ghosted" style="background:#f4f5f4; color:#71807d; border:1px solid #dfe7e2; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Drop</button>`;
   html += `<button type="button" class="reject-btn" data-id="${candidate.id}" style="background:#fef2f2; color:#e53e3e; border:1px solid #fee2e2; padding:6px 12px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer;">Reject</button>`;
   html += `<button type="button" class="candidate-edit-btn" data-id="${candidate.id}" title="Edit candidate information">✏️ Edit</button>`;
-  html += `<button type="button" class="candidate-remark-btn" data-id="${candidate.id}" title="Add or view candidate remarks">💬 Note</button>`;
   html += `</div>`;
   return html;
 }
@@ -2153,12 +2144,6 @@ function bindEvents() {
       openEditCandidateModal(button.dataset.id);
     };
   });
-  document.querySelectorAll('.candidate-remark-btn').forEach(button => {
-    button.onclick = (e) => {
-      e.stopPropagation();
-      openAddRemarkModal(button.dataset.id);
-    };
-  });
   document.querySelectorAll('[data-action="new-user"]').forEach(button => button.onclick = () => openAddUserModal());
   document.querySelectorAll('.delete-user-btn').forEach(button => button.onclick = () => deleteUser(button.dataset.id, button.dataset.name));
   document.querySelectorAll('.open-jd-preview').forEach(button => {
@@ -2225,7 +2210,6 @@ function openCandidateDetails(candidateId) {
         </div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <button type="button" class="candidate-edit-btn" id="profile-edit-btn" style="padding:7px 14px; font-size:12px;">✏️ Edit Candidate</button>
-          <button type="button" class="candidate-remark-btn" id="profile-remark-btn" style="padding:7px 14px; font-size:12px;">💬 Add Remark</button>
         </div>
       </div>
       <div class="profile-status">
@@ -2289,9 +2273,8 @@ function openCandidateDetails(candidateId) {
         </div>
       ` : ''}
       <div class="detail-section">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <h3 style="margin:0;">Candidate Remarks & Notes</h3>
-          <button type="button" class="text-button" id="profile-toggle-remark-box" style="font-size:11px; font-weight:700; color:var(--green); cursor:pointer;">+ Add Note</button>
         </div>
         ${candidate.remarks ? `<p class="profile-notes" style="margin-bottom:8px;"><strong>Current Remarks:</strong> ${escapeHtml(candidate.remarks)}</p>` : ''}
         <div class="remarks-feed" id="profile-remarks-feed" style="max-height:180px;">
@@ -2303,16 +2286,8 @@ function openCandidateDetails(candidateId) {
               </div>
               <p class="remark-text">${escapeHtml(r.text)}</p>
             </div>
-          `).join('') : (!candidate.remarks ? `<p style="font-size:12px; color:var(--muted); font-style:italic; margin:4px 0;">No remarks or notes logged yet.</p>` : '')}
+          `).join('') : (!candidate.remarks ? `<p style="font-size:12px; color:var(--muted); font-style:italic; margin:4px 0;">No remarks or notes logged yet. Use <strong>✏️ Edit Candidate</strong> to add notes.</p>` : '')}
         </div>
-        <form id="profile-inline-remark-form" class="inline-remark-box" style="display:none;">
-          <span style="font-size:11px; font-weight:700; color:#2c423b;">Add Note for ${escapeHtml(candidate.name)}</span>
-          <textarea name="quick_remark" rows="2" placeholder="Write remark note, discussion details, or interview updates..." required style="font-size:12px;"></textarea>
-          <div style="display:flex; justify-content:flex-end; gap:8px;">
-            <button type="button" class="secondary" id="cancel-profile-remark" style="padding:6px 12px; font-size:11px;">Cancel</button>
-            <button type="submit" class="primary" style="padding:6px 14px; font-size:11px;">Save Note</button>
-          </div>
-        </form>
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid var(--line);">
         <button type="button" class="secondary" id="profile-bottom-edit-btn" style="padding:9px 16px;">✏️ Edit All Information</button>
@@ -2332,47 +2307,6 @@ function openCandidateDetails(candidateId) {
   };
   modal.querySelector('#profile-edit-btn')?.addEventListener('click', editHandler);
   modal.querySelector('#profile-bottom-edit-btn')?.addEventListener('click', editHandler);
-
-  modal.querySelector('#profile-remark-btn')?.addEventListener('click', () => {
-    modal.remove();
-    openAddRemarkModal(candidate.id);
-  });
-
-  const remarkForm = modal.querySelector('#profile-inline-remark-form');
-  const toggleBtn = modal.querySelector('#profile-toggle-remark-box');
-  const cancelBtn = modal.querySelector('#cancel-profile-remark');
-  if (toggleBtn && remarkForm) {
-    toggleBtn.onclick = () => {
-      remarkForm.style.display = remarkForm.style.display === 'none' ? 'grid' : 'none';
-      if (remarkForm.style.display === 'grid') {
-        remarkForm.querySelector('textarea')?.focus();
-      }
-    };
-  }
-  if (cancelBtn && remarkForm) {
-    cancelBtn.onclick = () => {
-      remarkForm.style.display = 'none';
-    };
-  }
-  if (remarkForm) {
-    remarkForm.onsubmit = (e) => {
-      e.preventDefault();
-      const text = remarkForm.querySelector('textarea[name="quick_remark"]')?.value.trim();
-      if (!text) return;
-      candidate.remarks_history = candidate.remarks_history || [];
-      candidate.remarks_history.push({
-        text,
-        author: currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter',
-        stage: candidate.stage || 'General',
-        created_at: new Date().toISOString()
-      });
-      candidate.remarks = text;
-      save();
-      modal.remove();
-      render();
-      openCandidateDetails(candidate.id);
-    };
-  }
 
   const documentLink = [...modal.querySelectorAll('a[href]')].find(link => candidate.cv_url && link.href.includes(candidate.cv_url));
   documentLink?.addEventListener('click', event => {
@@ -2540,16 +2474,13 @@ function openEditCandidateModal(candidateId) {
 
       <!-- Section 5: Remarks & Notes -->
       <div class="edit-section-card">
-        <div class="edit-card-title">💬 Candidate Remarks & Notes</div>
-        <label>Overall Candidate Remarks
-          <textarea name="remarks" rows="2" placeholder="General observations, candidate preferences, background notes...">${escapeHtml(candidate.remarks || '')}</textarea>
-        </label>
-        <label>Add New Remark Note (Appends to Audit Log)
-          <textarea name="new_remark" rows="2" placeholder="Add a new note with timestamp (e.g. Spoke to candidate, confirmed availability for Monday)..."></textarea>
+        <div class="edit-card-title">📝 Candidate Remarks / Notes</div>
+        <label>Remarks / Notes
+          <textarea name="remarks" rows="3" placeholder="Enter remarks, notes, interview feedback, or candidate updates...">${escapeHtml(candidate.remarks || '')}</textarea>
         </label>
         ${(candidate.remarks_history || []).length > 0 ? `
-          <div>
-            <span style="font-size:11px; font-weight:700; color:var(--muted); display:block; margin-bottom:6px;">Previous Notes History:</span>
+          <div style="margin-top:10px;">
+            <span style="font-size:11px; font-weight:700; color:var(--muted); display:block; margin-bottom:6px;">Previous Notes & Updates History:</span>
             <div class="remarks-feed" style="max-height:150px;">
               ${candidate.remarks_history.slice().reverse().map(r => `
                 <div class="remark-card">
@@ -2730,24 +2661,20 @@ function openEditCandidateModal(candidateId) {
     candidate.joining_date = form.get('joining_date') || candidate.joining_date;
     candidate.rejection_reason = form.get('rejection_reason') || candidate.rejection_reason;
 
-    // Overall remarks
+    // Candidate Remarks / Notes
     const remarksInput = form.get('remarks');
-    if (remarksInput !== null && remarksInput !== undefined) {
-      candidate.remarks = remarksInput.trim();
-    }
-
-    // Append new remark note if entered
-    const newRemarkText = form.get('new_remark')?.trim();
-    if (newRemarkText) {
-      candidate.remarks_history = candidate.remarks_history || [];
-      candidate.remarks_history.push({
-        text: newRemarkText,
-        author: currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter',
-        stage: candidate.stage || 'General',
-        created_at: new Date().toISOString()
-      });
-      if (!candidate.remarks) {
-        candidate.remarks = newRemarkText;
+    const newRemarks = remarksInput !== null && remarksInput !== undefined ? remarksInput.trim() : '';
+    const prevRemarks = (candidate.remarks || '').trim();
+    if (newRemarks !== prevRemarks) {
+      candidate.remarks = newRemarks;
+      if (newRemarks) {
+        candidate.remarks_history = candidate.remarks_history || [];
+        candidate.remarks_history.push({
+          text: newRemarks,
+          author: currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter',
+          stage: candidate.stage || 'General',
+          created_at: new Date().toISOString()
+        });
       }
     }
 
@@ -2757,103 +2684,6 @@ function openEditCandidateModal(candidateId) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(candidate)
     }).catch(err => console.error('PUT candidate error:', err));
-
-    save();
-    modal.remove();
-    render();
-  };
-}
-
-function openAddRemarkModal(candidateId) {
-  const candidate = data.candidates.find(item => item.id === candidateId);
-  if (!candidate) return;
-
-  const modal = document.createElement('div');
-  modal.className = 'modal-backdrop';
-  modal.innerHTML = `
-    <form class="modal remarks-modal">
-      <button type="button" class="modal-close" aria-label="Close remarks modal">×</button>
-      <div class="profile-heading" style="margin-bottom:12px; padding-right:32px;">
-        <span class="initials profile-avatar" style="background:#fef3c7; color:#b45309;">💬</span>
-        <div>
-          <span class="section-kicker">CANDIDATE NOTES & REMARKS</span>
-          <h2 style="font-size:20px; margin:0;">Add Remark: ${escapeHtml(candidate.name)}</h2>
-          <p style="color:var(--muted); font-size:12px; margin:3px 0 0;">ID: ${escapeHtml(candidate.id)} · Current Stage: <span class="stage" style="padding:2px 6px; font-size:10px;">${escapeHtml(candidate.stage || 'CV Screening')}</span></p>
-        </div>
-      </div>
-
-      <div style="display:grid; gap:12px;">
-        <label>Stage Context
-          <select name="remark_stage">
-            ${stages.map(st => `<option value="${escapeHtml(st)}" ${candidate.stage === st ? 'selected' : ''}>${escapeHtml(st)}</option>`).join('')}
-          </select>
-        </label>
-
-        <label>New Remark / Recruiter Note *
-          <textarea name="remark_text" rows="3" placeholder="Enter interview feedback, screening notes, salary discussion, candidate availability..." required></textarea>
-        </label>
-
-        ${(candidate.remarks_history || []).length > 0 || candidate.remarks ? `
-          <div>
-            <span style="font-size:11px; font-weight:700; color:var(--muted); display:block; margin-bottom:6px;">Remarks & Timeline History:</span>
-            <div class="remarks-feed" style="max-height:200px;">
-              ${(candidate.remarks_history || []).slice().reverse().map(r => `
-                <div class="remark-card">
-                  <div class="remark-meta">
-                    <strong>👤 ${escapeHtml(r.author || 'Recruiter')}</strong>
-                    <span>${r.stage ? `<span class="stage" style="padding:1px 5px; font-size:9px; margin-right:4px;">${escapeHtml(r.stage)}</span>` : ''}🕒 ${formatDateTime(r.created_at)}</span>
-                  </div>
-                  <p class="remark-text">${escapeHtml(r.text)}</p>
-                </div>
-              `).join('')}
-              ${candidate.remarks && (!candidate.remarks_history || candidate.remarks_history.length === 0) ? `
-                <div class="remark-card">
-                  <div class="remark-meta">
-                    <strong>👤 Initial Note</strong>
-                    <span>🕒 Logged</span>
-                  </div>
-                  <p class="remark-text">${escapeHtml(candidate.remarks)}</p>
-                </div>
-              ` : ''}
-            </div>
-          </div>
-        ` : ''}
-      </div>
-
-      <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:8px;">
-        <button type="button" class="secondary modal-cancel-btn">Cancel</button>
-        <button type="submit" class="primary">Save Remark</button>
-      </div>
-    </form>
-  `;
-
-  mountModal(modal);
-  const close = () => modal.remove();
-  modal.querySelector('.modal-close').onclick = close;
-  modal.querySelector('.modal-cancel-btn').onclick = close;
-  modal.onclick = event => { if (event.target === modal) close(); };
-
-  modal.querySelector('form').onsubmit = event => {
-    event.preventDefault();
-    const text = modal.querySelector('textarea[name="remark_text"]').value.trim();
-    const stage = modal.querySelector('select[name="remark_stage"]').value;
-    if (!text) return;
-
-    const author = currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter';
-    candidate.remarks_history = candidate.remarks_history || [];
-    candidate.remarks_history.push({
-      text,
-      author,
-      stage,
-      created_at: new Date().toISOString()
-    });
-    candidate.remarks = text;
-
-    fetch(`${API_BASE}/api/candidates/${candidate.id}/remarks`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, author, stage })
-    }).catch(err => console.error('Add remark API error:', err));
 
     save();
     modal.remove();
