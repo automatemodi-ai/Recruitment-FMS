@@ -288,30 +288,36 @@ function _computeFingerprint(resData) {
   return `v${vLen}:${vMax}|c${cLen}:${cMax}`;
 }
 
-function fetchData(isAutoRefresh = false) {
-  fetch(`${API_BASE}/api/data`)
-    .then(async res => {
-      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
-      const text = await res.text();
-      return text ? JSON.parse(text) : { vacancies: [], candidates: [] };
-    })
-    .then(resData => {
-      const newFingerprint = _computeFingerprint(resData);
-      // On auto-refresh, skip render if nothing changed (avoids flicker)
-      if (isAutoRefresh && newFingerprint === _lastDataFingerprint) return;
-      _lastDataFingerprint = newFingerprint;
-      data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
-      render();
-    })
-    .catch(err => {
-      console.error('Fetch error:', err);
-      if (!isAutoRefresh) {
-        const main = document.querySelector('main');
-        if (main) {
-          main.innerHTML = '<h2 style="text-align:center;margin-top:50px;color:#e53e3e;">⚠ Backend API is not running!</h2><p style="text-align:center;">Make sure you are running <b>npm run dev</b> in the terminal so that both the backend (port 3000) and frontend are running together.</p>';
+async function fetchData(isAutoRefresh = false) {
+  try {
+    if (isAutoRefresh) {
+      // Step 1: Sub-10ms lightweight check before downloading full payload
+      const metaRes = await fetch(`${API_BASE}/api/data/meta`);
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        if (meta.fingerprint === _lastDataFingerprint) {
+          // Nothing changed on server! Return immediately (0.1 KB transfer)
+          return;
         }
       }
-    });
+    }
+
+    const res = await fetch(`${API_BASE}/api/data`);
+    if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+    const text = await res.text();
+    const resData = text ? JSON.parse(text) : { vacancies: [], candidates: [] };
+    _lastDataFingerprint = _computeFingerprint(resData);
+    data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
+    render();
+  } catch (err) {
+    console.error('Fetch error:', err);
+    if (!isAutoRefresh) {
+      const main = document.querySelector('main');
+      if (main) {
+        main.innerHTML = '<h2 style="text-align:center;margin-top:50px;color:#e53e3e;">⚠ Backend API is not running!</h2><p style="text-align:center;">Make sure you are running <b>npm run dev</b> in the terminal so that both the backend (port 3000) and frontend are running together.</p>';
+      }
+    }
+  }
 }
 
 function startAutoRefresh() {
@@ -348,6 +354,97 @@ let activePipelineStage = 'Application Received (New)';
 let activeVacancyStage = 'Manpower Requirement Raised';
 let activeDashboardPreset = 'all';
 let search = '';
+
+const paginationState = {
+  candidates: { page: 1, pageSize: 10 },
+  screening: { page: 1, pageSize: 10 },
+  vacancies: { page: 1, pageSize: 10 },
+  users: { page: 1, pageSize: 10 },
+  preset: { page: 1, pageSize: 10 }
+};
+
+function paginate(items, key) {
+  if (!paginationState[key]) {
+    paginationState[key] = { page: 1, pageSize: 10 };
+  }
+  const state = paginationState[key];
+  const pageSize = Number(state.pageSize) || 10;
+  const totalItems = (items || []).length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  if (state.page > totalPages) {
+    state.page = totalPages;
+  }
+  if (state.page < 1) {
+    state.page = 1;
+  }
+
+  const startIndex = (state.page - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const pagedItems = (items || []).slice(startIndex, endIndex);
+
+  return {
+    items: pagedItems,
+    page: state.page,
+    pageSize,
+    totalItems,
+    totalPages,
+    startIndex: totalItems === 0 ? 0 : startIndex + 1,
+    endIndex
+  };
+}
+
+function renderPaginationControls(paged, key) {
+  if (!paged || paged.totalItems === 0) return '';
+  const { page, pageSize, totalItems, totalPages, startIndex, endIndex } = paged;
+
+  const pageOptions = [10, 25, 50, 100];
+
+  const getPageNumbers = () => {
+    if (totalPages <= 7) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+    if (page <= 4) {
+      return [1, 2, 3, 4, 5, '...', totalPages];
+    }
+    if (page >= totalPages - 3) {
+      return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+    }
+    return [1, '...', page - 1, page, page + 1, '...', totalPages];
+  };
+
+  const pages = getPageNumbers();
+
+  return `
+    <div class="pagination-bar" data-pagination-key="${escapeHtml(key)}">
+      <div class="pagination-info">
+        <span>Showing <strong>${startIndex}</strong> to <strong>${endIndex}</strong> of <strong>${totalItems}</strong> entries</span>
+        <div class="pagination-size">
+          <label for="page-size-${escapeHtml(key)}">Per page:</label>
+          <select id="page-size-${escapeHtml(key)}" class="pagination-size-select" data-pagination-key="${escapeHtml(key)}">
+            ${pageOptions.map(sz => `<option value="${sz}" ${pageSize === sz ? 'selected' : ''}>${sz}</option>`).join('')}
+            <option value="99999" ${pageSize >= 99999 ? 'selected' : ''}>All</option>
+          </select>
+        </div>
+      </div>
+      <div class="pagination-controls">
+        <button type="button" class="pagination-btn first-page" data-pagination-key="${escapeHtml(key)}" data-page="1" ${page <= 1 ? 'disabled' : ''} title="First Page">«</button>
+        <button type="button" class="pagination-btn prev-page" data-pagination-key="${escapeHtml(key)}" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''} title="Previous Page">‹</button>
+        <div class="pagination-pages">
+          ${pages.map(p => {
+            if (p === '...') {
+              return `<span class="pagination-ellipsis">…</span>`;
+            }
+            const isActive = p === page;
+            return `<button type="button" class="pagination-btn page-num ${isActive ? 'active' : ''}" data-pagination-key="${escapeHtml(key)}" data-page="${p}" ${isActive ? 'aria-current="page"' : ''}>${p}</button>`;
+          }).join('')}
+        </div>
+        <button type="button" class="pagination-btn next-page" data-pagination-key="${escapeHtml(key)}" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''} title="Next Page">›</button>
+        <button type="button" class="pagination-btn last-page" data-pagination-key="${escapeHtml(key)}" data-page="${totalPages}" ${page >= totalPages ? 'disabled' : ''} title="Last Page">»</button>
+      </div>
+    </div>
+  `;
+}
 
 function matchCandidateSearch(c, query) {
   if (!query) return true;
@@ -988,7 +1085,9 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
     </button>
   </div>
 
-  ${activePresetCandidates !== null ? `
+  ${activePresetCandidates !== null ? (() => {
+    const pagedPreset = paginate(activePresetCandidates, 'preset');
+    return `
   <!-- Filtered Preset Result Section -->
   <section class="panel" style="margin-bottom: 24px; border: 1px solid var(--line);">
     <div class="panel-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
@@ -1011,7 +1110,7 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
           </tr>
         </thead>
         <tbody>
-          ${activePresetCandidates.map(c => `
+          ${pagedPreset.items.map(c => `
             <tr style="border-bottom:1px solid var(--line);">
               <td style="padding:10px 12px;">
                 <strong style="display:block;">${escapeHtml(c.name)}</strong>
@@ -1044,8 +1143,9 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
         </tbody>
       </table>
     </div>
-  </section>
-  ` : ''}
+    ${renderPaginationControls(pagedPreset, 'preset')}
+  </section>`;
+  })() : ''}
 
   <div class="stats">
     <div class="stat"><span>Open vacancies</span><strong>${open}</strong><em>Filtered live requisitions</em></div>
@@ -1115,6 +1215,7 @@ function vacancies() {
   if (!vacancyStages.includes(activeVacancyStage)) activeVacancyStage = 'Manpower Requirement Raised';
   const rows = filtered.filter(item => getVacancyStage(item) === activeVacancyStage);
   const activeWorkflow = vacancyStageMeta(activeVacancyStage);
+  const paged = paginate(rows, 'vacancies');
 
   return `<div class="page-intro"><div><span class="section-kicker">VACANCY FMS</span><p>Master Control Room: Track every job opening from requisition to closure.</p></div><button class="primary" data-action="new-vacancy">+ Add vacancy</button></div>
   ${renderFilterPanel('vacancies', { title: 'Vacancy data view', dateOptions: vacancyDateOptions, department: true, location: true, priority: true, owner: true, status: true })}
@@ -1126,7 +1227,7 @@ function vacancies() {
     <span>Responsible</span><strong>${activeWorkflow.owner}</strong>
     <span>Output</span><strong>${activeWorkflow.output}${activeWorkflow.tat === null ? '' : ` · TAT ${activeWorkflow.tat === 0 ? 'same day' : activeWorkflow.tat + 'd'}`}</strong>
   </section>
-  <section class="table-panel">
+  <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}">
     <table>
       <thead>
         <tr>
@@ -1140,7 +1241,7 @@ function vacancies() {
         </tr>
       </thead>
       <tbody>
-        ${rows.map(item => {
+        ${paged.items.map(item => {
           const totalC = data.candidates.filter(c => c.requirement_id === item.id || c.role === item.title).length;
           const interviewC = data.candidates.filter(c => (c.requirement_id === item.id || c.role === item.title) && c.stage.includes('Interview')).length;
           const offerC = data.candidates.filter(c => (c.requirement_id === item.id || c.role === item.title) && c.stage.includes('Offer')).length;
@@ -1187,7 +1288,8 @@ function vacancies() {
         ${rows.length === 0 ? `<tr><td colspan="7" style="text-align:center; padding:40px; color:#9aa6a2;">No vacancies in this workflow stage</td></tr>` : ''}
       </tbody>
     </table>
-  </section>`
+  </section>
+  ${renderPaginationControls(paged, 'vacancies')}`
 }
 
 function renderCandidateStageCell(candidate) {
@@ -1215,9 +1317,11 @@ function candidates(list) {
   if (activeView === 'CV Screening') {
     const rows = filters.screening.screening_status ? list : list.filter(x => x.screening_status === 'Pending Review' || x.screening_status === 'Hold' || !x.screening_status);
     const screeningSummary = filters.screening.screening_status ? `${rows.length} ${filters.screening.screening_status} application${rows.length === 1 ? '' : 's'}` : `${rows.length} applications pending review`;
+    const paged = paginate(rows, 'screening');
+
     return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add application</button></div></div>
     ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true, screeningStatus: true })}
-    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
+    <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
       <option ${item.screening_status === 'Shortlisted' ? 'selected' : ''}>Shortlisted</option>
       <option ${item.screening_status === 'Rejected' ? 'selected' : ''}>Rejected</option>
@@ -1225,7 +1329,8 @@ function candidates(list) {
     </select></td>
     <td>
       <button type="button" class="candidate-edit-btn" data-id="${item.id}" title="Edit candidate details">✏️ Edit</button>
-    </td></tr>`).join('')}${rows.length === 0 ? `<tr><td colspan="7" style="text-align:center; padding:40px; color:#9aa6a2;">No applications match the selected filters</td></tr>` : ''}</tbody></table></section>`;
+    </td></tr>`).join('')}${rows.length === 0 ? `<tr><td colspan="7" style="text-align:center; padding:40px; color:#9aa6a2;">No applications match the selected filters</td></tr>` : ''}</tbody></table></section>
+    ${renderPaginationControls(paged, 'screening')}`;
   } else {
     // Pipeline View: include all candidates who have been moved into pipeline or shortlisted
     const pipelineCandidates = list.filter(x => x.stage !== 'Application Received (New)' || x.screening_status === 'Shortlisted');
@@ -1238,6 +1343,7 @@ function candidates(list) {
     
     // Filter rows for the active tab
     const rows = pipelineCandidates.filter(x => x.stage === activePipelineStage);
+    const paged = paginate(rows, 'candidates');
     
     // Build tabs HTML
     const tabsHtml = `<div class="pipeline-tabs" style="display:flex; gap:10px; margin-bottom:20px; overflow-x:auto; padding-bottom:10px;">
@@ -1253,12 +1359,13 @@ function candidates(list) {
     return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${pipelineCandidates.length} active candidates in pipeline</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add Candidate</button></div></div>
     ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true })}
     ${tabsHtml}
-    <section class="table-panel"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${rows.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
+    <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
     <td>
       ${renderActionButtons(item)}
     </td></tr>`).join('')}
     ${rows.length === 0 ? `<tr><td colspan="6" style="text-align:center; padding:40px; color:#9aa6a2;">No candidates in this stage</td></tr>` : ''}
-    </tbody></table></section>`;
+    </tbody></table></section>
+    ${renderPaginationControls(paged, 'candidates')}`;
   }
 }
 
@@ -1955,6 +2062,8 @@ async function fetchUsers() {
 
 function usersView() {
   const isSuper = !currentUser || !currentUser.role || currentUser.role === 'Superadmin' || currentUser.role === 'Admin';
+  const paged = paginate(usersList, 'users');
+
   return `<div class="page-intro">
     <div>
       <span class="section-kicker">USER MANAGEMENT</span>
@@ -1962,7 +2071,7 @@ function usersView() {
     </div>
     <button class="primary" data-action="new-user">+ Add User</button>
   </div>
-  <section class="table-panel" style="margin-top:20px;">
+  <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}" style="margin-top:20px;">
     <table>
       <thead>
         <tr>
@@ -1974,7 +2083,7 @@ function usersView() {
         </tr>
       </thead>
       <tbody>
-        ${usersList.map(u => `
+        ${paged.items.map(u => `
           <tr>
             <td>
               <div style="display:flex; align-items:center; gap:10px;">
@@ -1999,7 +2108,8 @@ function usersView() {
         ${usersList.length === 0 ? `<tr><td colspan="5" style="text-align:center; padding:40px; color:#9aa6a2;">Loading user accounts...</td></tr>` : ''}
       </tbody>
     </table>
-  </section>`;
+  </section>
+  ${renderPaginationControls(paged, 'users')}`;
 }
 
 function openAddUserModal() {
@@ -2100,6 +2210,9 @@ function bindEvents() {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         search = event.target.value;
+        if (paginationState.candidates) paginationState.candidates.page = 1;
+        if (paginationState.screening) paginationState.screening.page = 1;
+        if (paginationState.preset) paginationState.preset.page = 1;
         render();
       }, 150);
     });
@@ -2108,6 +2221,7 @@ function bindEvents() {
     const panel = event.target.closest('[data-filter-view]');
     if (!panel) return;
     filters[panel.dataset.filterView][event.target.dataset.filterKey] = event.target.value;
+    if (paginationState[panel.dataset.filterView]) paginationState[panel.dataset.filterView].page = 1;
     render();
   });
   document.querySelectorAll('.filter-toggle').forEach(button => button.onclick = () => {
@@ -2119,13 +2233,18 @@ function bindEvents() {
   document.querySelectorAll('.filter-reset').forEach(button => button.onclick = () => {
     const key = button.dataset.filterReset;
     filters[key] = { ...filterDefaults[key] };
+    if (paginationState[key]) paginationState[key].page = 1;
     render();
   });
   document.querySelectorAll('.stage-select').forEach(select => select.onchange = event => openStageUpdate(event.target.dataset.id, event.target.value, event.target));
   document.querySelectorAll('.advance-btn').forEach(button => button.onclick = () => openStageUpdate(button.dataset.id, button.dataset.next));
   document.querySelectorAll('.hold-btn, .drop-btn').forEach(button => button.onclick = () => openStageUpdate(button.dataset.id, button.dataset.next));
   document.querySelectorAll('.reject-btn').forEach(button => button.onclick = () => openStageUpdate(button.dataset.id, 'Rejected'));
-  document.querySelectorAll('.tab-btn').forEach(button => button.onclick = () => { activePipelineStage = button.dataset.stage; render(); });
+  document.querySelectorAll('.tab-btn').forEach(button => button.onclick = () => { 
+    activePipelineStage = button.dataset.stage; 
+    if (paginationState.candidates) paginationState.candidates.page = 1;
+    render(); 
+  });
   document.querySelectorAll('.screening-select').forEach(select => select.onchange = event => { 
     const candidate = data.candidates.find(item => item.id === event.target.dataset.id); 
     const screeningStatus = event.target.value;
@@ -2149,7 +2268,11 @@ function bindEvents() {
     }).catch(err => console.error('PUT screening candidate error:', err));
     save(); render(); 
   });
-  document.querySelectorAll('.vacancy-workflow-tab').forEach(button => button.onclick = () => { activeVacancyStage = button.dataset.stage; render(); });
+  document.querySelectorAll('.vacancy-workflow-tab').forEach(button => button.onclick = () => { 
+    activeVacancyStage = button.dataset.stage; 
+    if (paginationState.vacancies) paginationState.vacancies.page = 1;
+    render(); 
+  });
   document.querySelectorAll('.vacancy-complete-btn').forEach(button => button.onclick = () => updateVacancyStage(button.dataset.id, button.dataset.next));
   document.querySelectorAll('.vacancy-status-select').forEach(select => select.onchange = event => { 
     const v = data.vacancies.find(item => item.id === event.target.dataset.id); 
@@ -2211,7 +2334,32 @@ function bindEvents() {
   document.querySelectorAll('[data-dashboard-preset]').forEach(button => {
     button.onclick = () => {
       activeDashboardPreset = button.dataset.dashboardPreset;
+      if (paginationState.preset) paginationState.preset.page = 1;
       render();
+    };
+  });
+
+  // Bind pagination controls
+  document.querySelectorAll('.pagination-btn[data-page]').forEach(button => {
+    button.onclick = () => {
+      const key = button.dataset.paginationKey;
+      const targetPage = parseInt(button.dataset.page, 10);
+      if (key && paginationState[key] && !isNaN(targetPage) && !button.disabled) {
+        paginationState[key].page = targetPage;
+        render();
+      }
+    };
+  });
+
+  document.querySelectorAll('.pagination-size-select').forEach(select => {
+    select.onchange = event => {
+      const key = select.dataset.paginationKey;
+      const newSize = parseInt(event.target.value, 10);
+      if (key && paginationState[key] && !isNaN(newSize)) {
+        paginationState[key].pageSize = newSize;
+        paginationState[key].page = 1;
+        render();
+      }
     };
   });
 }
@@ -3160,6 +3308,26 @@ function downloadCandidateTemplate(format = 'xlsx') {
       "Residential Address": "Mansarovar, Jaipur",
       "Referred By": "Walk-in",
       "Remarks": "Strong retail sales background"
+    },
+    {
+      "Candidate Name": "Amit Kumar",
+      "Mobile Number": "",
+      "Contacted Date": "",
+      "Email ID": "",
+      "Vacancy ID": "",
+      "Role / Job Title": "",
+      "Total Experience": "",
+      "Current CTC": "",
+      "Expected CTC": "",
+      "Notice Period": "",
+      "Location": "",
+      "Top Skills": "",
+      "Source": "",
+      "Gender": "",
+      "Marital Status": "",
+      "Residential Address": "",
+      "Referred By": "",
+      "Remarks": ""
     }
   ];
 
@@ -3195,7 +3363,7 @@ function openBulkCandidateModal() {
       <div class="bulk-modal-header">
         <span class="section-kicker">TALENT IMPORT ENGINE</span>
         <h2>📥 Bulk Import Candidates</h2>
-        <p>Import candidate applications in bulk via Excel (.xlsx, .xls) or CSV (.csv) spreadsheet.</p>
+        <p>Import candidate applications in bulk via Excel (.xlsx, .xls) or CSV (.csv) spreadsheet. <strong>Only Candidate Name is required; all other fields are optional.</strong></p>
       </div>
 
       <div class="modal-mode-tabs" style="display:flex; gap:8px; margin: 0 0 10px; background:#edf3f0; padding:4px; border-radius:6px;">
@@ -3271,7 +3439,7 @@ function openBulkCandidateModal() {
           <span class="bulk-stat-chip invalid" id="bulk-invalid-count" style="display:none;">⚠ Issues: 0</span>
           <label style="margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; cursor:pointer; text-transform:none; color:var(--ink);">
             <input type="checkbox" id="bulk-skip-invalid" checked style="width:auto; min-height:auto;">
-            Skip invalid rows (missing Name or Phone)
+            Skip invalid rows (missing Name or duplicate)
           </label>
         </div>
 
@@ -3440,21 +3608,20 @@ function openBulkCandidateModal() {
 
       const normP = normalizePhone(phone);
       const normE = normalizeEmail(email);
-      const cleanPhoneDigits = String(phone).replace(/[^0-9]/g, '');
-      const hasValidName = name && name.length >= 2;
-      const hasValidPhone = cleanPhoneDigits.length >= 10;
+      const trimmedName = String(name || '').trim();
+      const hasValidName = trimmedName.length > 0;
 
-      // Check duplicate against existing database candidates
-      const existingInDb = data.candidates.find(c => {
+      // Check duplicate against existing database candidates (only if phone or email is provided)
+      const existingInDb = (normP || normE) ? data.candidates.find(c => {
         const cPhone = normalizePhone(c.phone);
         const cEmail = normalizeEmail(c.email);
         return (normP && cPhone && normP === cPhone) || (normE && cEmail && normE === cEmail);
-      });
+      }) : null;
 
-      // Check duplicate within the sheet itself
+      // Check duplicate within the sheet itself (only if phone or email is provided)
       const isDuplicateInSheet = Boolean((normP && seenPhonesInSheet.has(normP)) || (normE && seenEmailsInSheet.has(normE)));
 
-      let isValid = hasValidName && hasValidPhone && !existingInDb && !isDuplicateInSheet;
+      let isValid = hasValidName && !existingInDb && !isDuplicateInSheet;
       let statusMsg = 'Ready';
       let statusClass = 'ok';
 
@@ -3466,22 +3633,17 @@ function openBulkCandidateModal() {
         statusMsg = 'Duplicate in File';
         statusClass = 'err';
         isValid = false;
-      } else if (!hasValidName && !hasValidPhone) {
-        statusMsg = 'Missing Name & Phone';
-        statusClass = 'err';
       } else if (!hasValidName) {
         statusMsg = 'Missing Name';
         statusClass = 'err';
-      } else if (!hasValidPhone) {
-        statusMsg = 'Invalid Phone (<10 digits)';
-        statusClass = 'warn';
+        isValid = false;
       }
 
       if (normP) seenPhonesInSheet.add(normP);
       if (normE) seenEmailsInSheet.add(normE);
 
       parsedRows.push({
-        name,
+        name: trimmedName,
         phone,
         contacted_date,
         email,
@@ -3544,8 +3706,8 @@ function openBulkCandidateModal() {
       return `
       <tr style="${!r.isValid ? 'background:#fff9f8;' : ''}">
         <td><span class="bulk-status-badge ${r.statusClass}">${escapeHtml(r.statusMsg)}</span></td>
-        <td><strong>${escapeHtml(r.name || '(Blank)')}</strong></td>
-        <td>${escapeHtml(r.phone || '(Blank)')}</td>
+        <td><strong>${escapeHtml(r.name || '(Missing Name)')}</strong></td>
+        <td>${escapeHtml(r.phone || '-')}</td>
         <td><span style="font-weight:600; color:#176049;">${escapeHtml(displayDate)}</span></td>
         <td>${escapeHtml(r.email || '-')}</td>
         <td>${escapeHtml(r.role || r.requirement_id || '-')}</td>
@@ -3635,14 +3797,14 @@ function openBulkCandidateModal() {
         requirement_id: reqId,
         name: row.name,
         role,
-        phone: row.phone,
+        phone: row.phone || '',
         contacted_date: contactDate,
-        email: row.email,
+        email: row.email || '',
         source,
-        location: row.location,
-        experience: row.experience ? (row.experience.toLowerCase().includes('year') ? row.experience : row.experience + ' Years') : 'Not specified',
+        location: row.location || '',
+        experience: row.experience ? (row.experience.toLowerCase().includes('year') ? row.experience : row.experience + ' Years') : '',
         current_ctc: row.current_ctc || '',
-        expected: row.expected || 'Not specified',
+        expected: row.expected || '',
         notice_period: row.notice_period ? (row.notice_period.toLowerCase().includes('day') ? row.notice_period : row.notice_period + ' Days') : '',
         skills: row.skills || '',
         gender: row.gender || '',

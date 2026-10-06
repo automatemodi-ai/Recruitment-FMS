@@ -618,6 +618,27 @@ router.get('/data', async (req, res) => {
   }
 });
 
+// 1b. Fast Lightweight Metadata Endpoint for Sub-10ms Polling Check
+router.get('/data/meta', async (req, res) => {
+  try {
+    const [vCount, cCount, vLatest, cLatest] = await Promise.all([
+      Vacancy.countDocuments(),
+      Candidate.countDocuments(),
+      Vacancy.findOne().sort({ updatedAt: -1 }).select('updatedAt createdAt').lean(),
+      Candidate.findOne().sort({ updatedAt: -1 }).select('updatedAt createdAt').lean()
+    ]);
+
+    const vTime = vLatest ? new Date(vLatest.updatedAt || vLatest.createdAt || 0).getTime() : 0;
+    const cTime = cLatest ? new Date(cLatest.updatedAt || cLatest.createdAt || 0).getTime() : 0;
+    const fingerprint = `v${vCount}:${vTime}|c${cCount}:${cTime}`;
+
+    res.setHeader('Cache-Control', 'private, no-cache');
+    res.json({ fingerprint, vCount, cCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 2. Sync / Bulk Save Data
 router.post('/sync', async (req, res) => {
   try {
@@ -1128,12 +1149,16 @@ router.post('/candidates/bulk', async (req, res) => {
 
     for (const rawCandidate of candidates) {
       const candidateData = { ...rawCandidate };
-      if (!candidateData.name || !candidateData.phone) continue;
+      const trimmedName = String(candidateData.name || '').trim();
+      if (!trimmedName) continue;
+      candidateData.name = trimmedName;
+      candidateData.phone = candidateData.phone ? String(candidateData.phone).trim() : '';
+      candidateData.email = candidateData.email ? String(candidateData.email).trim() : '';
 
       const normPhone = normalizePhone(candidateData.phone);
       const normEmail = normalizeEmail(candidateData.email);
 
-      // Check within current batch
+      // Check within current batch (only if phone or email is provided)
       if (normPhone && batchSeenPhones.has(normPhone)) {
         skippedDuplicates.push({
           name: candidateData.name,
@@ -1153,19 +1178,21 @@ router.post('/candidates/bulk', async (req, res) => {
         continue;
       }
 
-      // Check against database
-      const duplicateInDb = await findDuplicateCandidate({
-        phone: candidateData.phone,
-        email: candidateData.email
-      });
-      if (duplicateInDb) {
-        skippedDuplicates.push({
-          name: candidateData.name,
+      // Check against database (only if phone or email is provided)
+      if (normPhone || normEmail) {
+        const duplicateInDb = await findDuplicateCandidate({
           phone: candidateData.phone,
-          email: candidateData.email,
-          reason: `Already exists in database (${duplicateInDb.candidate.id})`
+          email: candidateData.email
         });
-        continue;
+        if (duplicateInDb) {
+          skippedDuplicates.push({
+            name: candidateData.name,
+            phone: candidateData.phone,
+            email: candidateData.email,
+            reason: `Already exists in database (${duplicateInDb.candidate.id})`
+          });
+          continue;
+        }
       }
 
       if (normPhone) batchSeenPhones.add(normPhone);
