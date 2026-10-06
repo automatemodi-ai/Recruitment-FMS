@@ -1454,3 +1454,39 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   }
 }
 
+/* Toast Notification System */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  min-width: 280px;
+  max-width: 420px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s ease;
+}
+.toast.info { background: #1e293b; border-left: 4px solid #38bdf8; }
+.toast.success { background: #064e3b; border-left: 4px solid #34d399; }
+.toast.warning { background: #78350f; border-left: 4px solid #fbbf24; }
+.toast.error { background: #7f1d1d; border-left: 4px solid #f87171; }
+@keyframes toastSlideIn {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+

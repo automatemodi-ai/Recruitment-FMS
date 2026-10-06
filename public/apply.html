@@ -211,7 +211,7 @@
 
       <div class="grid-2">
         <label><span>Phone number <span class="required-asterisk" aria-hidden="true">*</span></span>
-          <input type="tel" name="phone" id="phone-input" autocomplete="tel-national" inputmode="numeric" pattern="[0-9]{10}" title="Must be exactly 10 digits" required>
+          <input type="tel" name="phone" id="phone-input" autocomplete="tel-national" inputmode="numeric" pattern="[6-9][0-9]{9}" maxlength="10" title="Must be a valid 10-digit mobile number starting with 6, 7, 8, or 9" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0,10)" required>
           <span class="field-error" id="phone-error" style="display:none; color:#dc2626; font-size:12px; font-weight:600; margin-top:3px;"></span>
         </label>
         <label><span>Email ID <span class="required-asterisk" aria-hidden="true">*</span></span>

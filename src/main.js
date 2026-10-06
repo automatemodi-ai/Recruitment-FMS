@@ -343,6 +343,43 @@ document.addEventListener('visibilitychange', () => {
 });
 // --- End real-time auto-refresh system ---
 
+// --- UI Toast & Network Notification System ---
+function showToast(message, type = 'info', duration = 4000) {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const icons = {
+    info: 'ℹ️',
+    success: '✅',
+    warning: '⚠️',
+    error: '❌'
+  };
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span> <span>${escapeHtml(message)}</span>`;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+window.addEventListener('offline', () => {
+  showToast('Internet connection lost. Retrying when connected...', 'warning', 6000);
+});
+
+window.addEventListener('online', () => {
+  showToast('Connection restored. Syncing latest data...', 'success', 4000);
+  if (currentUser) fetchData(true);
+});
+// --- End UI Toast Notification System ---
+
 
 
 

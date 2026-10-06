@@ -602,6 +602,37 @@ app.use(async (req, res, next) => {
 // API Routes Router (Mounted on both /api and / so all paths match)
 const router = express.Router();
 
+// Zero-dependency In-Memory Rate Limiter Helper
+const createRateLimiter = ({ windowMs = 15 * 60 * 1000, max = 10, message = 'Too many requests, please try again later.' }) => {
+  const requests = new Map();
+  return (req, res, next) => {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const windowStart = now - windowMs;
+    const userRequests = (requests.get(ip) || []).filter(timestamp => timestamp > windowStart);
+    
+    if (userRequests.length >= max) {
+      return res.status(429).json({ error: message });
+    }
+    
+    userRequests.push(now);
+    requests.set(ip, userRequests);
+    next();
+  };
+};
+
+const applyRateLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  message: 'Too many job applications submitted from your IP address. Please try again after 1 hour.'
+});
+
+const loginRateLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  message: 'Too many login attempts. Please wait 15 minutes before trying again.'
+});
+
 // 1. Get all Data
 router.get('/data', async (req, res) => {
   try {
@@ -843,7 +874,7 @@ router.get('/candidates/check-duplicate', async (req, res) => {
 });
 
 // 4.2 Public Candidate Job Application Submission Endpoint
-router.post('/apply', upload.single('cv'), async (req, res) => {
+router.post('/apply', applyRateLimiter, upload.single('cv'), async (req, res) => {
   try {
     const candidateData = req.body;
     const name = String(candidateData.name || '').trim();
@@ -862,8 +893,8 @@ router.post('/apply', upload.single('cv'), async (req, res) => {
     }
 
     const normPhone = normalizePhone(phone);
-    if (normPhone.length < 10) {
-      return res.status(400).json({ error: 'Please enter a valid 10-digit phone number' });
+    if (normPhone.length !== 10 || !/^[6-9]/.test(normPhone)) {
+      return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number starting with 6, 7, 8, or 9' });
     }
 
     // Check for duplicate phone or email
@@ -1252,8 +1283,53 @@ router.post('/candidates/bulk', async (req, res) => {
   }
 });
 
+// 5.2 Server-Side Streamed CSV Export Endpoint
+router.get('/candidates/export-csv', async (req, res) => {
+  try {
+    const candidates = await Candidate.find().sort({ createdAt: -1 }).lean();
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=FMS_Candidates_Export_${new Date().toISOString().split('T')[0]}.csv`);
+
+    const headers = ['Candidate ID', 'Name', 'Role', 'Phone', 'Email', 'Requirement ID', 'Location', 'Experience', 'Expected CTC', 'Notice Period', 'Source', 'Stage', 'Screening Status', 'Applied Date'];
+    
+    let csvString = headers.join(',') + '\n';
+    
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    for (const c of candidates) {
+      const row = [
+        escapeCsv(c.id),
+        escapeCsv(c.name),
+        escapeCsv(c.role),
+        escapeCsv(c.phone),
+        escapeCsv(c.email),
+        escapeCsv(c.requirement_id),
+        escapeCsv(c.location),
+        escapeCsv(c.experience),
+        escapeCsv(c.expected),
+        escapeCsv(c.notice_period),
+        escapeCsv(c.source),
+        escapeCsv(c.stage),
+        escapeCsv(c.screening_status),
+        escapeCsv(c.createdAt ? new Date(c.createdAt).toISOString().split('T')[0] : '')
+      ];
+      csvString += row.join(',') + '\n';
+    }
+
+    res.send(csvString);
+  } catch (error) {
+    console.error('Error exporting CSV:', error);
+    res.status(500).json({ error: 'Failed to generate CSV export' });
+  }
+});
+
 // 6. Auth - Login
-router.post('/auth/login', async (req, res) => {
+router.post('/auth/login', loginRateLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
