@@ -1034,6 +1034,29 @@ router.post('/candidates', upload.single('cv'), async (req, res) => {
   }
 });
 
+// Pipeline updates need one indexed write, without profile scans or bulk sync.
+router.patch('/candidates/:id/stage', async (req, res) => {
+  try {
+    const allowed = ['stage', 'stage_updated_at', 'stage_history', 'stage_timestamps', 'screening_status',
+      'next_action', 'next_action_date', 'interview_date', 'interview_time', 'interviewer',
+      'interview_rating', 'interview_remarks', 'offer_date', 'offered_ctc', 'joining_date',
+      'rejection_reason', 'remarks', 'remarks_history'];
+    if (!req.body.updatedAt || !req.body.stage) {
+      return res.status(400).json({ error: 'Stage and candidate version are required. Refresh and try again.' });
+    }
+    const version = new Date(req.body.updatedAt);
+    if (!Number.isFinite(version.getTime())) return res.status(400).json({ error: 'Invalid candidate version' });
+    const update = Object.fromEntries(allowed.filter(key => Object.hasOwn(req.body, key)).map(key => [key, req.body[key]]));
+    const candidate = await Candidate.findOneAndUpdate(
+      { id: req.params.id, updatedAt: version }, { $set: update }, { new: true, runValidators: true }
+    ).lean();
+    if (!candidate) return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
+    res.json({ candidate });
+  } catch (error) {
+    res.status(error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500).json({ error: error.message });
+  }
+});
+
 // 5.05 Edit / Update Candidate Information at Any Stage
 router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
   try {
@@ -1045,6 +1068,9 @@ router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
     const existing = await Candidate.findOne({ id: candidateId });
     if (!existing) {
       return res.status(404).json({ error: `Candidate ${candidateId} not found` });
+    }
+    if (updateData.updatedAt && new Date(updateData.updatedAt).getTime() !== new Date(existing.updatedAt).getTime()) {
+      return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
     }
 
     // Parse remarks_history if provided as JSON string

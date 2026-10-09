@@ -1,0 +1,14 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=fs.readFileSync('src/main.js','utf8');
+const helper=source.match(/const belongsToVacancy = .*;/)[0];const ctx={};vm.createContext(ctx);vm.runInContext(helper,ctx);
+assert.equal(vm.runInContext("belongsToVacancy({requirement_id:'A',role:'CRM'},{id:'A'})",ctx),true);
+assert.equal(vm.runInContext("belongsToVacancy({requirement_id:'B',role:'CRM'},{id:'A'})",ctx),false);
+assert.equal(vm.runInContext("belongsToVacancy({role:'CRM'},{id:'A'})",ctx),false);
+const refresh=source.slice(source.indexOf('async function fetchData('),source.indexOf('\nfunction startAutoRefresh'));
+let release,requests=0,renders=0;
+const r={_pendingStageUpdates:0,_refreshInFlight:false,_dataRevision:0,_lastDataFingerprint:'',API_BASE:'',document:{querySelector:()=>null},data:{candidates:[{stage:'saved'}]},render:()=>renders++,normalizeVacancy:v=>v,normalizeCandidate:c=>c,_computeFingerprint:()=>'',console,fetch:()=>{requests++;return new Promise(resolve=>release=resolve);}};
+vm.createContext(r);vm.runInContext(refresh,r);const first=vm.runInContext('fetchData()',r);await vm.runInContext('fetchData()',r);assert.equal(requests,1);r._dataRevision++;release({ok:true,text:async()=>JSON.stringify({candidates:[{stage:'old'}]})});await first;assert.equal(r.data.candidates[0].stage,'saved');assert.equal(renders,0);assert.equal(r._refreshInFlight,false);
+const server=fs.readFileSync('server.js','utf8');const start=server.indexOf("router.patch('/candidates/:id/stage'");const end=server.indexOf('\n});',start);let handler,writes=0;const s={router:{patch:(_,h)=>handler=h},Candidate:{findOneAndUpdate:(filter,update)=>{writes++;assert.equal(filter.id,'A');assert.equal('phone' in update.$set,false);return {lean:async()=>({id:'A',stage:update.$set.stage})};}}};vm.createContext(s);vm.runInContext(server.slice(start,end+4),s);let result;await handler({params:{id:'A'},body:{updatedAt:'2026-10-09T12:00:00Z',stage:'Offer Released',phone:'ignored'}},{json:v=>result=v,status:()=>({json:v=>result=v})});assert.equal(writes,1);assert.equal(result.candidate.stage,'Offer Released');
+console.log('PASS: exact vacancy filtering, overlapping refresh prevention, stale refresh rejection, single-write stage API');

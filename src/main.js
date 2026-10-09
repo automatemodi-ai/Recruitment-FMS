@@ -270,6 +270,8 @@ const normalizeVacancy = vacancy => {
 
 // --- Real-time auto-refresh system ---
 let _pendingStageUpdates = 0;
+let _savingCandidateId = null;
+let _refreshInFlight = false;
 let _dataRevision = 0;
 let _autoRefreshTimer = null;
 let _lastDataFingerprint = '';
@@ -291,7 +293,8 @@ function _computeFingerprint(resData) {
 }
 
 async function fetchData(isAutoRefresh = false) {
-  if (_pendingStageUpdates) return;
+  if (_pendingStageUpdates || _refreshInFlight || document.querySelector('.modal-backdrop')) return;
+  _refreshInFlight = true;
   const revision = _dataRevision;
   try {
     if (isAutoRefresh) {
@@ -310,7 +313,7 @@ async function fetchData(isAutoRefresh = false) {
     if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
     const text = await res.text();
     const resData = text ? JSON.parse(text) : { vacancies: [], candidates: [] };
-    if (_pendingStageUpdates || revision !== _dataRevision) return;
+    if (_pendingStageUpdates || revision !== _dataRevision || document.querySelector('.modal-backdrop')) return;
     _lastDataFingerprint = _computeFingerprint(resData);
     data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
     render();
@@ -322,6 +325,8 @@ async function fetchData(isAutoRefresh = false) {
         main.innerHTML = '<h2 style="text-align:center;margin-top:50px;color:#e53e3e;">⚠ Backend API is not running!</h2><p style="text-align:center;">Make sure you are running <b>npm run dev</b> in the terminal so that both the backend (port 3000) and frontend are running together.</p>';
       }
     }
+  } finally {
+    _refreshInFlight = false;
   }
 }
 
@@ -345,6 +350,11 @@ document.addEventListener('visibilitychange', () => {
     fetchData(true);   // Immediate refresh on tab focus
     startAutoRefresh();
   }
+});
+window.addEventListener('beforeunload', event => {
+  if (!_pendingStageUpdates) return;
+  event.preventDefault();
+  event.returnValue = '';
 });
 // --- End real-time auto-refresh system ---
 
@@ -392,6 +402,8 @@ window.addEventListener('online', () => {
 
 
 let activeView = 'Dashboard';
+let activeCandidateVacancyId = '';
+const belongsToVacancy = (candidate, vacancy) => Boolean(candidate.requirement_id && vacancy.id && String(candidate.requirement_id).trim() === String(vacancy.id).trim());
 let activePipelineStage = 'Application Received (New)';
 let activeVacancyStage = 'Manpower Requirement Raised';
 let activeDashboardPreset = 'all';
@@ -910,7 +922,10 @@ function render() {
     const filterKey = activeView === 'CV Screening' ? 'screening' : 'candidates';
     let list = applyCandidateFilters(data.candidates, filters[filterKey]);
     if (search) list = list.filter(c => matchCandidateSearch(c, search));
-    main.innerHTML = candidates(list);
+    if (activeCandidateVacancyId) list = list.filter(c => belongsToVacancy(c, { id: activeCandidateVacancyId }));
+    const vacancy = data.vacancies.find(v => v.id === activeCandidateVacancyId);
+    const scope = activeCandidateVacancyId ? `<div class="panel-head"><strong>Vacancy: ${escapeHtml(vacancy?.title || activeCandidateVacancyId)} · ${escapeHtml(activeCandidateVacancyId)}</strong><button type="button" class="text-button" data-view="${activeView}">Show all candidates</button></div>` : '';
+    main.innerHTML = scope + candidates(list);
   } else if (activeView === 'Reports') {
     main.innerHTML = reports();
   } else if (activeView === 'Users') {
@@ -943,10 +958,7 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
   }
 
   return openRoles.map(vacancy => {
-    const vacancyCandidates = candidateList.filter(c => 
-      (c.requirement_id && sameFilterValue(c.requirement_id, vacancy.id)) || 
-      sameFilterValue(c.role, vacancy.title)
-    );
+    const vacancyCandidates = candidateList.filter(c => belongsToVacancy(c, vacancy));
     const shortlistedCandidates = vacancyCandidates.filter(isCandidateShortlisted);
     const totalApplicants = vacancyCandidates.length;
     const daysActive = daysOpen(vacancy);
@@ -966,9 +978,9 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
             <span style="color: var(--muted);">📍 ${escapeHtml(vacancy.location || 'Showroom')} · 🏢 ${escapeHtml(vacancy.department || 'Operations')}</span>
             <span style="color: var(--muted);">👤 Owner: <strong>${escapeHtml(vacancy.owner || 'HR')}</strong></span>
             <span style="color: var(--muted);">⏱ Open: <strong>${daysActive}d</strong></span>
-            <span class="shortlisted-count-chip ${shortlistedCandidates.length === 0 ? 'zero' : ''}">
+            <button type="button" data-view="Candidates" data-candidate-vacancy="${escapeHtml(vacancy.id)}" class="shortlisted-count-chip ${shortlistedCandidates.length === 0 ? 'zero' : ''}">
               👥 ${shortlistedCandidates.length} Shortlisted Candidate${shortlistedCandidates.length === 1 ? '' : 's'}
-            </span>
+            </button>
           </div>
         </div>
 
@@ -1051,7 +1063,7 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
                 </button>
                 ${totalApplicants > 0 ? `
                   <span style="color: var(--muted); font-size: 11px;">·</span>
-                  <button type="button" class="text-button" data-view="CV Screening" style="font-size: 11px; font-weight: 700; color: var(--green); cursor: pointer; text-decoration: underline;">
+                  <button type="button" class="text-button" data-view="CV Screening" data-candidate-vacancy="${escapeHtml(vacancy.id)}" style="font-size: 11px; font-weight: 700; color: var(--green); cursor: pointer; text-decoration: underline;">
                     Review ${totalApplicants} Applied Candidate${totalApplicants === 1 ? '' : 's'} in CV Screening →
                   </button>
                 ` : ''}
@@ -1071,7 +1083,7 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
   const activeList = activeCandidates(candidateList);
   const overdue = activeList.filter(isStageOverdue);
   const totalShortlistedInOpen = openRoles.reduce((sum, v) => {
-    return sum + candidateList.filter(c => ((c.requirement_id && sameFilterValue(c.requirement_id, v.id)) || sameFilterValue(c.role, v.title)) && isCandidateShortlisted(c)).length;
+    return sum + candidateList.filter(c => belongsToVacancy(c, v) && isCandidateShortlisted(c)).length;
   }, 0);
 
   // 1-Click Quick Preset calculations
@@ -1337,8 +1349,10 @@ function vacancies() {
 function renderCandidateStageCell(candidate) {
   const stamp = getStageTimestamp(candidate, candidate.stage);
   const historyCount = (candidate.stage_history || []).length;
+  const saving = _savingCandidateId === candidate.id;
   return `<td>
     <strong>${stageMeta(candidate).owner}</strong>
+    ${saving ? '<small role="status" aria-live="polite">Saving stage…</small>' : ''}
     <small>${stageMeta(candidate).output}</small>
     <div class="step-timestamp-badge" style="margin:4px 0;">
       <span class="pulse-dot"></span>
@@ -1357,7 +1371,7 @@ function renderCandidateStageCell(candidate) {
 
 function candidates(list) { 
   if (activeView === 'CV Screening') {
-    const rows = filters.screening.screening_status ? list : list.filter(x => x.screening_status === 'Pending Review' || x.screening_status === 'Hold' || !x.screening_status);
+    const rows = (activeCandidateVacancyId || filters.screening.screening_status) ? list : list.filter(x => x.screening_status === 'Pending Review' || x.screening_status === 'Hold' || !x.screening_status);
     const screeningSummary = filters.screening.screening_status ? `${rows.length} ${filters.screening.screening_status} application${rows.length === 1 ? '' : 's'}` : `${rows.length} applications pending review`;
     const paged = paginate(rows, 'screening');
 
@@ -2240,6 +2254,18 @@ async function deleteUser(userId, userName) {
 function bindEvents() {
   document.querySelectorAll('[data-view]').forEach(button => button.onclick = () => {
     activeView = button.dataset.view;
+    activeCandidateVacancyId = button.dataset.candidateVacancy || '';
+    if (activeCandidateVacancyId) {
+      search = '';
+      const input = document.querySelector('#search');
+      if (input) input.value = '';
+      const key = activeView === 'CV Screening' ? 'screening' : 'candidates';
+      filters[key] = { ...filterDefaults[key] };
+      paginationState[key].page = 1;
+      if (activeView === 'Candidates') {
+        activePipelineStage = data.candidates.find(c => c.requirement_id === activeCandidateVacancyId && c.stage !== 'Application Received (New)')?.stage || 'CV Screened & Shortlisted';
+      }
+    }
     navigationUI?.close(false);
     render();
     document.querySelector('#main-content')?.focus({ preventScroll: true });
@@ -2278,6 +2304,7 @@ function bindEvents() {
     if (paginationState[key]) paginationState[key].page = 1;
     render();
   });
+  document.querySelectorAll('.stage-select, .screening-select, .advance-btn, .hold-btn, .drop-btn, .reject-btn, .candidate-edit-btn').forEach(control => { control.disabled = _pendingStageUpdates > 0; });
   document.querySelectorAll('.stage-select').forEach(select => select.onchange = event => openStageUpdate(event.target.dataset.id, event.target.value, event.target));
   document.querySelectorAll('.advance-btn').forEach(button => button.onclick = () => openStageUpdate(button.dataset.id, button.dataset.next));
   document.querySelectorAll('.hold-btn, .drop-btn').forEach(button => button.onclick = () => openStageUpdate(button.dataset.id, button.dataset.next));
@@ -2985,6 +3012,7 @@ function openStageUpdate(candidateId, nextStage, select, onSave) {
     event.preventDefault();
     const submit = event.target.querySelector('button[type="submit"]');
     submit.disabled = true;
+    submit.textContent = 'Saving stage…';
     const values = new FormData(event.target);
     const formEntries = Object.fromEntries(values);
     if (formEntries.interview_rating) {
@@ -3007,6 +3035,7 @@ function openStageUpdate(candidateId, nextStage, select, onSave) {
       modal.remove();
     } else {
       submit.disabled = false;
+      submit.textContent = 'Save stage update';
     }
   };
 }
@@ -3017,6 +3046,7 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
   const previousVacancies = structuredClone(data.vacancies);
   const previousTab = activePipelineStage;
   _pendingStageUpdates++;
+  _savingCandidateId = candidate.id;
   _dataRevision++;
   Object.assign(candidate, draft);
   if (candidate.stage !== nextStage) moveRecordToStage(candidate, nextStage, 'Application Received (New)');
@@ -3045,11 +3075,17 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
     activePipelineStage = nextStage;
   }
 
+  render();
   let saved = false;
   try {
-    const response = await fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(candidate)
+    const response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.fromEntries(
+        ['updatedAt', 'stage', 'stage_updated_at', 'stage_history', 'stage_timestamps', 'screening_status',
+          'next_action', 'next_action_date', 'interview_date', 'interview_time', 'interviewer', 'interview_rating',
+          'interview_remarks', 'offer_date', 'offered_ctc', 'joining_date', 'rejection_reason', 'remarks', 'remarks_history']
+          .filter(key => Object.hasOwn(candidate, key)).map(key => [key, candidate[key]])
+      ))
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not save candidate stage');
@@ -3071,6 +3107,7 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
     }
     alert(saved ? `Candidate stage saved, but vacancy closure failed: ${error.message}` : `Stage update failed: ${error.message}`);
   } finally {
+    _savingCandidateId = null;
     _pendingStageUpdates--;
     _dataRevision++;
     render();
