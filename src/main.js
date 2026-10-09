@@ -269,6 +269,8 @@ const normalizeVacancy = vacancy => {
 };
 
 // --- Real-time auto-refresh system ---
+let _pendingStageUpdates = 0;
+let _dataRevision = 0;
 let _autoRefreshTimer = null;
 let _lastDataFingerprint = '';
 const AUTO_REFRESH_INTERVAL = 10000; // 10 seconds
@@ -285,10 +287,12 @@ function _computeFingerprint(resData) {
     const t = c.updatedAt || c.createdAt || '';
     return t > m ? t : m;
   }, '');
-  return `v${vLen}:${vMax}|c${cLen}:${cMax}`;
+  return `v${vLen}:${vMax ? new Date(vMax).getTime() : 0}|c${cLen}:${cMax ? new Date(cMax).getTime() : 0}`;
 }
 
 async function fetchData(isAutoRefresh = false) {
+  if (_pendingStageUpdates) return;
+  const revision = _dataRevision;
   try {
     if (isAutoRefresh) {
       // Step 1: Sub-10ms lightweight check before downloading full payload
@@ -306,6 +310,7 @@ async function fetchData(isAutoRefresh = false) {
     if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
     const text = await res.text();
     const resData = text ? JSON.parse(text) : { vacancies: [], candidates: [] };
+    if (_pendingStageUpdates || revision !== _dataRevision) return;
     _lastDataFingerprint = _computeFingerprint(resData);
     data = { ...resData, vacancies: (resData.vacancies || []).map(normalizeVacancy), candidates: (resData.candidates || []).map(normalizeCandidate) };
     render();
@@ -2282,28 +2287,19 @@ function bindEvents() {
     if (paginationState.candidates) paginationState.candidates.page = 1;
     render(); 
   });
-  document.querySelectorAll('.screening-select').forEach(select => select.onchange = event => { 
-    const candidate = data.candidates.find(item => item.id === event.target.dataset.id); 
+  document.querySelectorAll('.screening-select').forEach(select => select.onchange = async event => {
+    const candidate = data.candidates.find(item => item.id === event.target.dataset.id);
+    if (!candidate) return;
     const screeningStatus = event.target.value;
+    const nextStage = screeningStatus === 'Rejected' ? 'Rejected' : screeningStatus === 'Hold' ? 'On Hold' : screeningStatus === 'Shortlisted' ? 'CV Screened & Shortlisted' : candidate.stage;
     if (screeningStatus === 'Rejected') {
-      openStageUpdate(candidate.id, 'Rejected', select, () => { candidate.screening_status = 'Rejected'; });
+      openStageUpdate(candidate.id, nextStage, select);
       return;
     }
-    candidate.screening_status = screeningStatus; 
-    if (screeningStatus === 'Shortlisted') {
-      moveRecordToStage(candidate, 'CV Screened & Shortlisted', 'Application Received (New)');
-      activePipelineStage = 'CV Screened & Shortlisted';
-      alert(candidate.name + ' has been shortlisted and moved to the Candidate Pipeline.');
-    } else if (screeningStatus === 'Hold') {
-      moveRecordToStage(candidate, 'On Hold', 'Application Received (New)');
-      activePipelineStage = 'On Hold';
-    }
-    fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(candidate)
-    }).catch(err => console.error('PUT screening candidate error:', err));
-    save(); render(); 
+    const draft = { ...structuredClone(candidate), screening_status: screeningStatus };
+    select.disabled = true;
+    await updateCandidateStage(candidate, nextStage, draft);
+    select.disabled = false;
   });
   document.querySelectorAll('.vacancy-workflow-tab').forEach(button => button.onclick = () => { 
     activeVacancyStage = button.dataset.stage; 
@@ -2764,8 +2760,8 @@ function openEditCandidateModal(candidateId) {
       if (c.id === candidate.id) return false;
       const cPhone = normalizePhone(c.phone);
       const cEmail = normalizeEmail(c.email);
-      const phoneMatch = normPhone && cPhone && normPhone === cPhone;
-      const emailMatch = normEmail && cEmail && normEmail === cEmail;
+      const phoneMatch = normPhone !== normalizePhone(candidate.phone) && normPhone && cPhone && normPhone === cPhone;
+      const emailMatch = normEmail !== normalizeEmail(candidate.email) && normEmail && cEmail && normEmail === cEmail;
       return phoneMatch || emailMatch;
     });
 
@@ -2796,6 +2792,11 @@ function openEditCandidateModal(candidateId) {
         console.error('CV upload error:', err);
       }
     }
+
+    const previousCandidate = structuredClone(candidate);
+    const previousVacancies = structuredClone(data.vacancies);
+    _pendingStageUpdates++;
+    _dataRevision++;
 
     // Handle Vacancy change
     const newReqId = form.get('requirement_id');
@@ -2893,16 +2894,40 @@ function openEditCandidateModal(candidateId) {
       }
     }
 
-    // Parallel direct API call to backend PUT route
-    fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(candidate)
-    }).catch(err => console.error('PUT candidate error:', err));
-
-    save();
-    modal.remove();
-    render();
+    let saved = false;
+    try {
+      const response = await fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(candidate)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not save candidate changes');
+      Object.assign(candidate, normalizeCandidate(result.candidate));
+      saved = true;
+      if (candidate.stage === 'Candidate Joined (Closed - Won)' && oldStage !== candidate.stage) {
+        const vacancy = data.vacancies.find(v => v.id === candidate.requirement_id || v.title === candidate.role);
+        if (vacancy) {
+          const closure = await fetch(`${API_BASE}/api/sync`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ vacancies: [vacancy] })
+          });
+          if (!closure.ok) throw new Error('Vacancy closure could not be saved');
+        }
+      }
+      modal.remove();
+    } catch (error) {
+      if (!saved) {
+        Object.keys(candidate).forEach(key => delete candidate[key]);
+        Object.assign(candidate, previousCandidate);
+        data.vacancies = previousVacancies;
+      }
+      alert(saved ? `Candidate saved, but vacancy closure failed: ${error.message}` : `Candidate save failed: ${error.message}`);
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Save Candidate Changes'; }
+    } finally {
+      _pendingStageUpdates--;
+      _dataRevision++;
+      render();
+    }
   };
 }
 
@@ -2956,32 +2981,45 @@ function openStageUpdate(candidateId, nextStage, select, onSave) {
   mountModal(modal);
   const close = () => { if (select) select.value = candidate.stage || candidate.screening_status; modal.remove(); };
   modal.querySelector('.modal-close').onclick = close;
-  modal.querySelector('form').onsubmit = event => {
+  modal.querySelector('form').onsubmit = async event => {
     event.preventDefault();
+    const submit = event.target.querySelector('button[type="submit"]');
+    submit.disabled = true;
     const values = new FormData(event.target);
     const formEntries = Object.fromEntries(values);
     if (formEntries.interview_rating) {
       formEntries.interview_rating = Number(formEntries.interview_rating);
     }
+    const draft = structuredClone(candidate);
     const newRemarks = formEntries.remarks?.trim();
     if (newRemarks && newRemarks !== (candidate.remarks || '').trim()) {
-      candidate.remarks_history = candidate.remarks_history || [];
-      candidate.remarks_history.push({
+      draft.remarks_history = draft.remarks_history || [];
+      draft.remarks_history.push({
         text: newRemarks,
         author: currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter',
         stage: nextStage,
         created_at: new Date().toISOString()
       });
     }
-    Object.assign(candidate, formEntries);
-    if (onSave) onSave();
-    updateCandidateStage(candidate, nextStage);
-    modal.remove();
+    Object.assign(draft, formEntries);
+    if (await updateCandidateStage(candidate, nextStage, draft)) {
+      if (onSave) onSave();
+      modal.remove();
+    } else {
+      submit.disabled = false;
+    }
   };
 }
 
-function updateCandidateStage(candidate, nextStage) {
-  moveRecordToStage(candidate, nextStage, 'Application Received (New)');
+async function updateCandidateStage(candidate, nextStage, draft = candidate) {
+  if (_pendingStageUpdates) return false;
+  const previous = structuredClone(candidate);
+  const previousVacancies = structuredClone(data.vacancies);
+  const previousTab = activePipelineStage;
+  _pendingStageUpdates++;
+  _dataRevision++;
+  Object.assign(candidate, draft);
+  if (candidate.stage !== nextStage) moveRecordToStage(candidate, nextStage, 'Application Received (New)');
   
   if (nextStage === 'Rejected') {
     candidate.screening_status = 'Rejected';
@@ -2989,7 +3027,7 @@ function updateCandidateStage(candidate, nextStage) {
     candidate.screening_status = 'Hold';
   } else if (nextStage === 'Dropped / Ghosted') {
     candidate.screening_status = 'Hold';
-  } else if (nextStage !== 'Application Received (New)') {
+  } else if (nextStage !== 'Application Received (New)' && previous.stage !== nextStage) {
     candidate.screening_status = 'Shortlisted';
   }
 
@@ -3007,15 +3045,37 @@ function updateCandidateStage(candidate, nextStage) {
     activePipelineStage = nextStage;
   }
 
-  // Direct PUT to persist candidate in MongoDB immediately
-  fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(candidate)
-  }).catch(err => console.error('PUT candidate stage update error:', err));
-
-  save();
-  render();
+  let saved = false;
+  try {
+    const response = await fetch(`${API_BASE}/api/candidates/${candidate.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(candidate)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not save candidate stage');
+    Object.assign(candidate, normalizeCandidate(result.candidate));
+    saved = true;
+    if (nextStage === 'Candidate Joined (Closed - Won)') {
+      const closure = await fetch(`${API_BASE}/api/sync`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vacancies: data.vacancies.filter(v => v.id === candidate.requirement_id || v.title === candidate.role) })
+      });
+      if (!closure.ok) alert('Candidate stage saved, but vacancy closure could not be saved. Please refresh and close the vacancy.');
+    }
+  } catch (error) {
+    if (!saved) {
+      Object.keys(candidate).forEach(key => delete candidate[key]);
+      Object.assign(candidate, previous);
+      data.vacancies = previousVacancies;
+      activePipelineStage = previousTab;
+    }
+    alert(saved ? `Candidate stage saved, but vacancy closure failed: ${error.message}` : `Stage update failed: ${error.message}`);
+  } finally {
+    _pendingStageUpdates--;
+    _dataRevision++;
+    render();
+  }
+  return saved;
 }
 
 function updateVacancyStage(vacancyId, nextStage) {

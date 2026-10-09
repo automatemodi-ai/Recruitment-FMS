@@ -704,7 +704,20 @@ router.post('/sync', async (req, res) => {
             continue;
           }
         }
-        await Candidate.findOneAndUpdate({ id: c.id }, cDoc, { upsert: true, new: true, setDefaultsOnInsert: true });
+        // An older browser snapshot must not undo a saved pipeline transition.
+        const filter = { id: c.id };
+        if (existingRecord) {
+          filter.updatedAt = c.updatedAt || existingRecord.updatedAt;
+          if (c.updatedAt && new Date(c.updatedAt).getTime() !== new Date(existingRecord.updatedAt).getTime()) continue;
+          if (new Date(existingRecord.stage_updated_at) > new Date(c.stage_updated_at)) continue;
+          if (existingRecord.stage === c.stage) {
+            delete cDoc.stage;
+            delete cDoc.stage_updated_at;
+            delete cDoc.stage_history;
+            delete cDoc.stage_timestamps;
+          }
+        }
+        await Candidate.findOneAndUpdate(filter, cDoc, { upsert: !existingRecord, new: true, setDefaultsOnInsert: true });
       }
     }
 
@@ -1052,10 +1065,11 @@ router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
     }
 
     // Check duplicate phone or email against other candidates
-    if (updateData.phone || updateData.email) {
+    if ((updateData.phone && normalizePhone(updateData.phone) !== normalizePhone(existing.phone)) ||
+        (updateData.email && normalizeEmail(updateData.email) !== normalizeEmail(existing.email))) {
       const duplicate = await findDuplicateCandidate({
-        phone: updateData.phone,
-        email: updateData.email,
+        phone: normalizePhone(updateData.phone) !== normalizePhone(existing.phone) ? updateData.phone : undefined,
+        email: normalizeEmail(updateData.email) !== normalizeEmail(existing.email) ? updateData.email : undefined,
         excludeId: candidateId
       });
       if (duplicate) {
@@ -1105,12 +1119,17 @@ router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
       delete updateData.remark_author;
     }
 
+    const updateFilter = { id: candidateId };
+    if (updateData.updatedAt) updateFilter.updatedAt = new Date(updateData.updatedAt);
+    delete updateData.updatedAt;
+    delete updateData.createdAt;
     const updated = await Candidate.findOneAndUpdate(
-      { id: candidateId },
+      updateFilter,
       { $set: updateData },
       { new: true }
     );
 
+    if (!updated) return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
     res.json({ message: 'Candidate updated successfully', candidate: updated });
   } catch (error) {
     console.error('Error updating candidate:', error);
