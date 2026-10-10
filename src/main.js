@@ -2,6 +2,7 @@ import './style.css'
 import { setupNavigation } from './navigation.js'
 import { prepareTables, revealActiveTabs, mountModal } from './responsive.js'
 import * as XLSX from 'xlsx'
+import { formatCandidateName } from '../shared/candidate-name.js'
 
 let navigationUI;
 
@@ -522,11 +523,11 @@ function matchCandidateSearch(c, query) {
   return terms.every(term => searchableText.includes(term));
 }
 const filterDefaults = {
-  dashboard: { dateField: 'created', from: '', to: '', department: '', location: '', priority: '', owner: '', source: '', status: '' },
-  vacancies: { dateField: 'opened', from: '', to: '', department: '', location: '', priority: '', owner: '', status: '' },
-  screening: { dateField: 'created', from: '', to: '', department: '', role: '', source: '', location: '', priority: '', owner: '', screening_status: '' },
-  candidates: { dateField: 'updated', from: '', to: '', department: '', role: '', source: '', location: '', priority: '', owner: '' },
-  reports: { dateField: 'created', from: '', to: '', department: '', location: '', priority: '', owner: '', source: '', status: '' }
+  dashboard: { department: '', source: '', status: 'Open' },
+  vacancies: { department: '', status: '' },
+  screening: { department: '', role: '', source: '', screening_status: '' },
+  candidates: { department: '', role: '', source: '' },
+  reports: { department: '', source: '', status: '' }
 };
 let filters = Object.fromEntries(Object.entries(filterDefaults).map(([key, value]) => [key, { ...value }]));
 
@@ -860,26 +861,20 @@ function applyCandidateFilters(list, filter) {
 }
 
 function renderSelectFilter(filterKey, label, options, placeholder, selectedValue) {
-  return `<label>${label}<select class="filter-control" data-filter-key="${filterKey}"><option value="">${placeholder}</option>${options.map(option => `<option value="${escapeHtml(option)}" ${sameFilterValue(selectedValue, option) ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;
+  const hasVal = selectedValue !== undefined && selectedValue !== null && String(selectedValue).trim() !== '';
+  return `<label class="filter-field"><span>${label}</span><select class="filter-control ${hasVal ? 'has-value' : ''}" data-filter-key="${filterKey}"><option value="">${placeholder}</option>${options.map(option => `<option value="${escapeHtml(option)}" ${sameFilterValue(selectedValue, option) ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;
 }
 
 const filterPanelExpanded = new Map();
 
 function renderFilterPanel(key, settings) {
-  const filter = filters[key];
+  const filter = filters[key] || {};
   const candidateRoles = uniqueValues(data.candidates.map(candidate => candidate.role));
   const vacancyTitles = uniqueValues(data.vacancies.map(vacancy => vacancy.title));
   const sourceOptions = uniqueValues([...data.candidates.map(candidate => candidate.source), 'Naukri', 'Indeed', 'Referral', 'Consultant', 'Walk-in', 'Website', 'LinkedIn', 'Other']);
-  const dateOptions = settings.dateOptions || commonDateOptions || [];
-  const fields = [
-    `<label>Date By<select class="filter-control" data-filter-key="dateField">${dateOptions.map(option => `<option value="${option.value}" ${filter.dateField === option.value ? 'selected' : ''}>${option.label}</option>`).join('')}</select></label>`,
-    `<label>From<input type="date" class="filter-control" data-filter-key="from" value="${filter.from || ''}"></label>`,
-    `<label>To<input type="date" class="filter-control" data-filter-key="to" value="${filter.to || ''}"></label>`
-  ];
+  const fields = [];
   if (settings.department) fields.push(renderSelectFilter('department', 'Department', departments, 'All departments', filter.department));
-  if (settings.location) fields.push(renderSelectFilter('location', 'Location', uniqueValues([...locations, ...data.candidates.map(candidate => candidate.location)]), 'All locations', filter.location));
-  if (settings.priority) fields.push(renderSelectFilter('priority', 'Priority', priorities, 'All priorities', filter.priority));
-  if (settings.owner) fields.push(renderSelectFilter('owner', 'Owner', uniqueValues([...managers, ...data.vacancies.map(vacancy => vacancy.owner)]), 'All owners', filter.owner));
+  if (settings.role) fields.push(renderSelectFilter('role', 'Role', uniqueValues([...vacancyTitles, ...candidateRoles]), 'All roles', filter.role));
   if (settings.status) {
     let statusPlaceholder = 'All statuses';
     let statusOpts = vacancyStatuses;
@@ -889,14 +884,33 @@ function renderFilterPanel(key, settings) {
     }
     fields.push(renderSelectFilter('status', 'Status', statusOpts, statusPlaceholder, filter.status));
   }
-  if (settings.role) fields.push(renderSelectFilter('role', 'Role', uniqueValues([...vacancyTitles, ...candidateRoles]), 'All roles', filter.role));
   if (settings.source) fields.push(renderSelectFilter('source', 'Source', sourceOptions, 'All sources', filter.source));
   if (settings.screeningStatus) fields.push(renderSelectFilter('screening_status', 'Screening', ['Pending Review', 'Shortlisted', 'Rejected', 'Hold'], 'All screening', filter.screening_status));
-  const activeCount = Object.entries(filter).filter(([field, value]) => field !== 'dateField' && value).length;
+  const activeCount = Object.values(filter).filter(val => val !== undefined && val !== null && String(val).trim() !== '').length;
   const expanded = filterPanelExpanded.get(key) ?? !window.matchMedia('(max-width: 640px)').matches;
   return `<section class="filter-panel" data-filter-view="${key}">
-    <div class="filter-head"><button type="button" class="filter-toggle" data-filter-toggle="${key}" aria-expanded="${expanded}" aria-controls="filters-${key}"><span><span class="section-kicker">FILTERS${activeCount ? ` · ${activeCount} active` : ''}</span><strong>${settings.title}</strong></span><span class="filter-chevron" aria-hidden="true">⌄</span></button><button type="button" class="text-button filter-reset" data-filter-reset="${key}">Reset${activeCount ? ` (${activeCount})` : ''}</button></div>
-    <div class="filter-grid" id="filters-${key}" ${expanded ? '' : 'hidden'}>${fields.join('')}</div>
+    <div class="filter-head">
+      <button type="button" class="filter-toggle" data-filter-toggle="${key}" aria-expanded="${expanded}" aria-controls="filters-${key}">
+        <span class="filter-toggle-content">
+          <svg class="filter-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+          <span class="filter-title-wrap">
+            <span class="filter-title">${settings.title}</span>
+            ${activeCount ? `<span class="filter-active-pill">${activeCount} active</span>` : ''}
+          </span>
+        </span>
+        <span class="filter-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div class="filter-head-actions">
+        <button type="button" class="filter-reset-btn" data-filter-reset="${key}" ${activeCount ? '' : 'disabled'}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          Reset${activeCount ? ` (${activeCount})` : ''}
+        </button>
+        ${settings.actionHtml || ''}
+      </div>
+    </div>
+    <div class="filter-grid" id="filters-${key}" ${expanded ? '' : 'hidden'}>
+      ${fields.join('')}
+    </div>
   </section>`;
 }
 
@@ -1110,14 +1124,66 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
 
   const latestActivity = [...candidateList].sort((a,b) => new Date(b.stage_updated_at || 0) - new Date(a.stage_updated_at || 0)).slice(0, 4);
 
-  return `${renderFilterPanel('dashboard', { title: 'Dashboard data view', dateOptions: commonDateOptions, department: true, location: true, priority: true, owner: true, source: true, status: true })}
-  <section class="welcome">
-    <div>
-      <span class="section-kicker">OPERATIONS OVERVIEW</span>
-      <p>Live recruitment control room with workflow ownership and TAT tracking.</p>
+  return `${renderFilterPanel('dashboard', {
+    title: 'Dashboard data view',
+    department: true,
+    source: true,
+    status: true,
+    actionHtml: '<button type="button" class="primary filter-action-btn" data-action="new-vacancy">+ New vacancy</button>'
+  })}
+
+  <!-- Executive KPI Metrics Overview -->
+  <div class="stats">
+    <div class="stat stat-card-vacancies">
+      <div class="stat-header">
+        <span class="stat-label">Open Vacancies</span>
+        <div class="stat-icon stat-icon-red">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+        </div>
+      </div>
+      <strong class="stat-num">${open}</strong>
+      <div class="stat-footer">
+        <span class="stat-desc">Active job openings</span>
+      </div>
     </div>
-    <button class="primary" data-action="new-vacancy">+ New vacancy</button>
-  </section>
+    <div class="stat stat-card-candidates">
+      <div class="stat-header">
+        <span class="stat-label">Total Applications</span>
+        <div class="stat-icon stat-icon-blue">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        </div>
+      </div>
+      <strong class="stat-num">${candidateList.length}</strong>
+      <div class="stat-footer">
+        <span class="stat-desc">Filtered applicant records</span>
+      </div>
+    </div>
+    <div class="stat stat-card-pipeline">
+      <div class="stat-header">
+        <span class="stat-label">Active Pipeline</span>
+        <div class="stat-icon stat-icon-amber">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+        </div>
+      </div>
+      <strong class="stat-num">${activeList.length}</strong>
+      <div class="stat-footer">
+        <span class="stat-desc">Across ${open} open requisitions</span>
+      </div>
+    </div>
+    <div class="stat stat-card-tat">
+      <div class="stat-header">
+        <span class="stat-label">Avg. Days Open</span>
+        <div class="stat-icon ${averageDays > 30 ? 'stat-icon-red' : 'stat-icon-green'}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+        </div>
+      </div>
+      <strong class="stat-num">${averageDays}<span class="stat-unit">d</span></strong>
+      <div class="stat-footer">
+        <span class="stat-pill ${averageDays > 30 ? 'pill-warn' : 'pill-ok'}">${averageDays > 30 ? '⚠️ Needs attention' : '✓ Within target'}</span>
+        <span class="stat-desc">Target TAT &le; 30d</span>
+      </div>
+    </div>
+  </div>
 
   <!-- 1-Click Quick Preset Action Buttons -->
   <div class="quick-preset-bar">
@@ -1201,13 +1267,6 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
   </section>`;
   })() : ''}
 
-  <div class="stats">
-    <div class="stat"><span>Open vacancies</span><strong>${open}</strong><em>Filtered live requisitions</em></div>
-    <div class="stat"><span>Total applications</span><strong>${candidateList.length}</strong><em>Filtered candidate records</em></div>
-    <div class="stat"><span>In active pipeline</span><strong>${activeList.length}</strong><em>Across ${open} open roles</em></div>
-    <div class="stat"><span>Average days open</span><strong>${averageDays}</strong><em class="${averageDays > 30 ? 'warn' : 'up'}">${averageDays > 30 ? 'Needs attention' : 'Within control'}</em></div>
-  </div>
-
   <!-- Open Vacancies & Shortlisted Candidates Pipeline Section -->
   <section class="panel" style="margin-bottom: 24px; border: 1px solid var(--line); padding: 0; overflow: hidden; background: #fff; border-radius: 8px;">
     <div class="panel-head" style="padding: 16px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; background: #fafcfb; flex-wrap: wrap; gap: 10px;">
@@ -1239,7 +1298,15 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
         <div><span class="section-kicker">TAT WATCHLIST</span><h3>${overdue.length} overdue candidate${overdue.length === 1 ? '' : 's'}</h3></div>
         <button class="text-button" data-dashboard-preset="overdue">View all overdue →</button>
       </div>
-      ${overdue.slice(0, 5).map(item => `<div class="mini-row"><span class="priority urgent"></span><div><strong>${item.name}</strong><small>${item.stage} · ${daysInStage(item)} days · Owner: ${stageMeta(item).owner}</small></div><b>${item.next_action || 'Follow up'}</b></div>`).join('') || '<p class="empty-note">No candidate stage is beyond its target TAT.</p>'}
+      ${overdue.slice(0, 5).map(item => `<div class="mini-row"><span class="priority urgent"></span><div><strong>${item.name}</strong><small>${item.stage} · ${daysInStage(item)} days · Owner: ${stageMeta(item).owner}</small></div><b>${item.next_action || 'Follow up'}</b></div>`).join('') || `
+        <div class="tat-success-state">
+          <div class="tat-success-icon">✓</div>
+          <div>
+            <strong>All candidates within target TAT</strong>
+            <p>Zero bottlenecks detected across current recruitment pipelines.</p>
+          </div>
+        </div>
+      `}
     </section>
   </div>
   <section class="panel activity">
@@ -1268,18 +1335,12 @@ function vacancies() {
   const filtered = applyVacancyFilters(data.vacancies, filters.vacancies);
   if (!vacancyStages.includes(activeVacancyStage)) activeVacancyStage = 'Manpower Requirement Raised';
   const rows = filtered.filter(item => getVacancyStage(item) === activeVacancyStage);
-  const activeWorkflow = vacancyStageMeta(activeVacancyStage);
   const paged = paginate(rows, 'vacancies');
 
   return `<div class="page-intro"><div><span class="section-kicker">VACANCY FMS</span><p>Master Control Room: Track every job opening from requisition to closure.</p></div><button class="primary" data-action="new-vacancy">+ Add vacancy</button></div>
-  ${renderFilterPanel('vacancies', { title: 'Vacancy data view', dateOptions: vacancyDateOptions, department: true, location: true, priority: true, owner: true, status: true })}
+  ${renderFilterPanel('vacancies', { title: 'Vacancy data view', department: true, status: true })}
   <section class="toolbar vacancy-toolbar">
     ${renderVacancyWorkflowTabs(filtered)}
-  </section>
-  <section class="workflow-card vacancy-workflow-summary">
-    <span>Active tab</span><strong>${activeVacancyStage}</strong>
-    <span>Responsible</span><strong>${activeWorkflow.owner}</strong>
-    <span>Output</span><strong>${activeWorkflow.output}${activeWorkflow.tat === null ? '' : ` · TAT ${activeWorkflow.tat === 0 ? 'same day' : activeWorkflow.tat + 'd'}`}</strong>
   </section>
   <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}">
     <table>
@@ -1376,7 +1437,7 @@ function candidates(list) {
     const paged = paginate(rows, 'screening');
 
     return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add application</button></div></div>
-    ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true, screeningStatus: true })}
+    ${renderFilterPanel('screening', { title: 'CV screening view', department: true, role: true, source: true, screeningStatus: true })}
     <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
       <option ${item.screening_status === 'Shortlisted' ? 'selected' : ''}>Shortlisted</option>
@@ -1413,7 +1474,7 @@ function candidates(list) {
     </div>`;
 
     return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${pipelineCandidates.length} active candidates in pipeline</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add Candidate</button></div></div>
-    ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, location: true, priority: true, owner: true, role: true, source: true })}
+    ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', department: true, role: true, source: true })}
     ${tabsHtml}
     <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
     <td>
@@ -1888,7 +1949,7 @@ function reports() {
     </button>
   </div>
 
-  ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: commonDateOptions, department: true, location: true, priority: true, owner: true, source: true, status: true })}
+  ${renderFilterPanel('reports', { title: 'Filter Report View', department: true, source: true, status: true })}
 
   ${activeReportTab === 'vacancy' ? `
     <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -2298,7 +2359,7 @@ function bindEvents() {
     button.setAttribute('aria-expanded', String(expanded));
     document.getElementById(button.getAttribute('aria-controls')).hidden = !expanded;
   });
-  document.querySelectorAll('.filter-reset').forEach(button => button.onclick = () => {
+  document.querySelectorAll('.filter-reset, .filter-reset-btn').forEach(button => button.onclick = () => {
     const key = button.dataset.filterReset;
     filters[key] = { ...filterDefaults[key] };
     if (paginationState[key]) paginationState[key].page = 1;
@@ -3212,6 +3273,13 @@ function openModal(type, preselectedRequirementId = '') {
       reqSelect.onchange = fillRole;
     }
 
+    const candidateNameInput = modal.querySelector('input[name="name"]');
+    if (candidateNameInput && !vacancy) {
+      candidateNameInput.addEventListener('blur', () => {
+        candidateNameInput.value = formatCandidateName(candidateNameInput.value);
+      });
+    }
+
     const bulkSwitchBtn = modal.querySelector('#modal-switch-to-bulk');
     if (bulkSwitchBtn) {
       bulkSwitchBtn.onclick = () => {
@@ -3276,7 +3344,7 @@ function openModal(type, preselectedRequirementId = '') {
         }).catch(err => console.error('Save vacancy error:', err));
       } else {
         const reqId = form.get('requirement_id') || '';
-        const name = form.get('name')?.trim();
+        const name = formatCandidateName(form.get('name'));
         const phone = form.get('phone')?.trim();
         const email = form.get('email')?.trim();
         const role = form.get('role')?.trim() || 'General';

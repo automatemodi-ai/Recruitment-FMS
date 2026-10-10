@@ -310,11 +310,17 @@
     });
 
     const posSelect = document.getElementById('position-select');
+    const nameInput = document.querySelector('input[name="name"]');
     const phoneInput = document.getElementById('phone-input');
     const emailInput = document.getElementById('email-input');
     const phoneError = document.getElementById('phone-error');
     const emailError = document.getElementById('email-error');
     const errorBanner = document.getElementById('form-error-banner');
+
+    nameInput.addEventListener('blur', () => {
+      nameInput.value = nameInput.value.trim().replace(/\s+/g, ' ').toLowerCase()
+        .replace(/(^|\s)(\p{L})/gu, (_match, space, letter) => `${space}${letter.toUpperCase()}`);
+    });
 
     // Fetch open vacancies for position dropdown
     fetch(`${API_BASE}/api/data`)

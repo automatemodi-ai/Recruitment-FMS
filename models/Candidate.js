@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { formatCandidateName } from '../shared/candidate-name.js';
 
 const stageHistorySchema = new mongoose.Schema({
   stage: { type: String, required: true },
@@ -25,7 +26,7 @@ const remarkHistorySchema = new mongoose.Schema({
 const candidateSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true, index: true },
   requirement_id: { type: String, default: 'GENERAL', index: true },
-  name: { type: String, required: true },
+  name: { type: String, required: true, set: formatCandidateName },
   role: { type: String, default: 'Not Specified' },
   phone: { type: String, default: '' },
   email: { type: String },
