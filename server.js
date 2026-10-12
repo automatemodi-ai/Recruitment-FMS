@@ -1041,16 +1041,36 @@ router.patch('/candidates/:id/stage', async (req, res) => {
       'next_action', 'next_action_date', 'interview_date', 'interview_time', 'interviewer',
       'interview_rating', 'interview_remarks', 'offer_date', 'offered_ctc', 'joining_date',
       'rejection_reason', 'remarks', 'remarks_history'];
-    if (!req.body.updatedAt || !req.body.stage) {
-      return res.status(400).json({ error: 'Stage and candidate version are required. Refresh and try again.' });
+    if (!req.body.stage) {
+      return res.status(400).json({ error: 'Stage is required.' });
     }
-    const version = new Date(req.body.updatedAt);
-    if (!Number.isFinite(version.getTime())) return res.status(400).json({ error: 'Invalid candidate version' });
     const update = Object.fromEntries(allowed.filter(key => Object.hasOwn(req.body, key)).map(key => [key, req.body[key]]));
-    const candidate = await Candidate.findOneAndUpdate(
-      { id: req.params.id, updatedAt: version }, { $set: update }, { new: true, runValidators: true }
-    ).lean();
-    if (!candidate) return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
+
+    let candidate = null;
+    if (req.body.updatedAt) {
+      const version = new Date(req.body.updatedAt);
+      if (Number.isFinite(version.getTime())) {
+        candidate = await Candidate.findOneAndUpdate(
+          { id: req.params.id, updatedAt: version }, { $set: update }, { new: true, runValidators: true }
+        ).lean();
+      }
+    }
+
+    if (!candidate) {
+      if (req.body.updatedAt && typeof Candidate.findOne === 'function') {
+        const query = Candidate.findOne({ id: req.params.id });
+        const existing = query && typeof query.lean === 'function' ? await query.lean() : await query;
+        if (existing && existing.updatedAt && new Date(req.body.updatedAt).getTime() !== new Date(existing.updatedAt).getTime()) {
+          return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
+        }
+      }
+      candidate = await Candidate.findOneAndUpdate(
+        { id: req.params.id }, { $set: update }, { new: true, runValidators: true }
+      ).lean();
+    }
+    if (!candidate) {
+      return res.status(404).json({ error: `Candidate ${req.params.id} not found.` });
+    }
     res.json({ candidate });
   } catch (error) {
     res.status(error.name === 'ValidationError' || error.name === 'CastError' ? 400 : 500).json({ error: error.message });

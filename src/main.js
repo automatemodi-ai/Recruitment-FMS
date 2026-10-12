@@ -261,7 +261,8 @@ const normalizeStageTimestamps = (record, currentStage) => {
 const normalizeCandidate = candidate => {
   const stage = legacyStageMap[candidate.stage] || candidate.stage || 'Application Received (New)';
   const stage_updated_at = toIsoDateTime(candidate.stage_updated_at || candidate.timestamp || candidate.createdAt) || nowIso();
-  return { ...candidate, timestamp: toIsoDateTime(candidate.timestamp || candidate.createdAt || stage_updated_at) || stage_updated_at, stage, stage_updated_at, stage_history: candidate.stage_history || [], stage_timestamps: normalizeStageTimestamps({ ...candidate, stage_updated_at }, stage) };
+  const updatedAt = toIsoDateTime(candidate.updatedAt || candidate.timestamp || candidate.createdAt || stage_updated_at) || nowIso();
+  return { ...candidate, updatedAt, timestamp: toIsoDateTime(candidate.timestamp || candidate.createdAt || stage_updated_at) || stage_updated_at, stage, stage_updated_at, stage_history: candidate.stage_history || [], stage_timestamps: normalizeStageTimestamps({ ...candidate, stage_updated_at }, stage) };
 };
 const normalizeVacancy = vacancy => {
   const stage = vacancyStages.includes(vacancy.stage) ? vacancy.stage : 'Manpower Requirement Raised';
@@ -2379,15 +2380,24 @@ function bindEvents() {
     const candidate = data.candidates.find(item => item.id === event.target.dataset.id);
     if (!candidate) return;
     const screeningStatus = event.target.value;
-    const nextStage = screeningStatus === 'Rejected' ? 'Rejected' : screeningStatus === 'Hold' ? 'On Hold' : screeningStatus === 'Shortlisted' ? 'CV Screened & Shortlisted' : candidate.stage;
+    const nextStage = screeningStatus === 'Rejected'
+      ? 'Rejected'
+      : screeningStatus === 'Hold'
+        ? 'On Hold'
+        : screeningStatus === 'Shortlisted'
+          ? 'CV Screened & Shortlisted'
+          : 'Application Received (New)';
     if (screeningStatus === 'Rejected') {
       openStageUpdate(candidate.id, nextStage, select);
       return;
     }
     const draft = { ...structuredClone(candidate), screening_status: screeningStatus };
     select.disabled = true;
-    await updateCandidateStage(candidate, nextStage, draft);
+    const ok = await updateCandidateStage(candidate, nextStage, draft);
     select.disabled = false;
+    if (ok && screeningStatus === 'Shortlisted') {
+      showToast(`${candidate.name} shortlisted and moved to Pipeline`, 'success');
+    }
   });
   document.querySelectorAll('.vacancy-workflow-tab').forEach(button => button.onclick = () => { 
     activeVacancyStage = button.dataset.stage; 
@@ -3136,17 +3146,26 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
     activePipelineStage = nextStage;
   }
 
+  if (!candidate.updatedAt) {
+    candidate.updatedAt = candidate.timestamp || candidate.createdAt || candidate.stage_updated_at || new Date().toISOString();
+  }
+
   render();
   let saved = false;
   try {
+    const payload = Object.fromEntries(
+      ['updatedAt', 'stage', 'stage_updated_at', 'stage_history', 'stage_timestamps', 'screening_status',
+        'next_action', 'next_action_date', 'interview_date', 'interview_time', 'interviewer', 'interview_rating',
+        'interview_remarks', 'offer_date', 'offered_ctc', 'joining_date', 'rejection_reason', 'remarks', 'remarks_history']
+        .filter(key => candidate[key] !== undefined && candidate[key] !== null)
+        .map(key => [key, candidate[key]])
+    );
+    if (!payload.updatedAt) {
+      payload.updatedAt = candidate.updatedAt || new Date().toISOString();
+    }
     const response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.fromEntries(
-        ['updatedAt', 'stage', 'stage_updated_at', 'stage_history', 'stage_timestamps', 'screening_status',
-          'next_action', 'next_action_date', 'interview_date', 'interview_time', 'interviewer', 'interview_rating',
-          'interview_remarks', 'offer_date', 'offered_ctc', 'joining_date', 'rejection_reason', 'remarks', 'remarks_history']
-          .filter(key => Object.hasOwn(candidate, key)).map(key => [key, candidate[key]])
-      ))
+      body: JSON.stringify(payload)
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not save candidate stage');
@@ -3441,6 +3460,8 @@ function openModal(type, preselectedRequirementId = '') {
           stage: 'Application Received (New)',
           screening_status: 'Pending Review',
           timestamp: createdAt,
+          createdAt: createdAt,
+          updatedAt: createdAt,
           stage_updated_at: createdAt,
           stage_history: [],
           stage_timestamps: { 'Application Received (New)': { entered_at: createdAt } },
@@ -3457,6 +3478,13 @@ function openModal(type, preselectedRequirementId = '') {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newCandidate)
+        }).then(async res => {
+          if (res.ok) {
+            const json = await res.json();
+            if (json.candidate) {
+              Object.assign(newCandidate, normalizeCandidate(json.candidate));
+            }
+          }
         }).catch(err => console.error('Save candidate API error:', err));
       }
       save();
