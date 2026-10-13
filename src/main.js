@@ -2106,30 +2106,30 @@ function reports() {
   ${activeReportTab === 'closed_jobs' ? `
     <!-- Dedicated Closed Jobs Report View -->
     <div class="closed-jobs-kpi-grid">
-      <div class="report-card accent-card">
-        <span>Total Closed Vacancies</span>
+      <div class="report-card accent-card" title="Total completed job requisitions">
+        <span>🏁 Closed Vacancies</span>
         <strong>${closedJobsData.summary.totalClosed}</strong>
-        <small>Completed job requisitions</small>
+        <small>Completed requisitions</small>
       </div>
-      <div class="report-card">
-        <span>Candidates Joined</span>
-        <strong style="color:var(--green);">${closedJobsData.summary.totalJoined}</strong>
-        <small>Successfully onboarded / hired</small>
+      <div class="report-card" title="Successfully onboarded hires">
+        <span>🎉 Candidates Joined</span>
+        <strong style="color:#16a34a;">${closedJobsData.summary.totalJoined}</strong>
+        <small>Successfully onboarded</small>
       </div>
-      <div class="report-card">
-        <span>Average Time-to-Fill</span>
-        <strong>${closedJobsData.summary.avgTat}d</strong>
-        <small>Days from opening to closure</small>
+      <div class="report-card" title="Average time to fill in days">
+        <span>⏱️ Avg Time-to-Fill</span>
+        <strong style="color:#2563eb;">${closedJobsData.summary.avgTat}d</strong>
+        <small>Opening to closure</small>
       </div>
-      <div class="report-card">
-        <span>Total Applications Handled</span>
-        <strong>${closedJobsData.summary.totalApplicants}</strong>
-        <small>Across ${closedJobsData.summary.totalClosed} closed positions</small>
+      <div class="report-card" title="Total applications handled across closed roles">
+        <span>📝 Applications</span>
+        <strong style="color:#d97706;">${closedJobsData.summary.totalApplicants}</strong>
+        <small>Across ${closedJobsData.summary.totalClosed} closed roles</small>
       </div>
-      <div class="report-card">
-        <span>Shortlisted Pipeline</span>
-        <strong>${closedJobsData.summary.totalShortlisted}</strong>
-        <small>${closedJobsData.summary.totalApplicants ? Math.round((closedJobsData.summary.totalShortlisted / closedJobsData.summary.totalApplicants) * 100) : 0}% screening qualification</small>
+      <div class="report-card" title="Shortlisted candidate pipeline">
+        <span>⭐ Shortlisted</span>
+        <strong style="color:#7c3aed;">${closedJobsData.summary.totalShortlisted}</strong>
+        <small>${closedJobsData.summary.totalApplicants ? Math.round((closedJobsData.summary.totalShortlisted / closedJobsData.summary.totalApplicants) * 100) : 0}% qualified</small>
       </div>
     </div>
 
@@ -2213,30 +2213,30 @@ function reports() {
     </section>
   ` : `
     <!-- Funnel Metrics Table View for Daily, Weekly, Monthly, and Vacancy Reports -->
-    <div class="report-grid" style="margin-bottom: 24px;">
-      <div class="report-card accent-card">
-        <span>Candidates Reached / Forms</span>
+    <div class="report-grid">
+      <div class="report-card accent-card" title="Total candidate applications received or sourced">
+        <span>📝 Candidates Reached</span>
         <strong>${totals.formsFilled}</strong>
-        <small>Total candidate applications</small>
+        <small>Total applications</small>
       </div>
-      <div class="report-card">
-        <span>Shortlisted</span>
-        <strong>${totals.shortlisted}</strong>
+      <div class="report-card" title="Screened and shortlisted candidates">
+        <span>⭐ Shortlisted</span>
+        <strong style="color:#2563eb;">${totals.shortlisted}</strong>
         <small>${totals.formsFilled ? Math.round((totals.shortlisted / totals.formsFilled) * 100) : 0}% screening rate</small>
       </div>
-      <div class="report-card">
-        <span>Total Interviews</span>
-        <strong>${totals.telephonic + totals.hrInterview + totals.finalInterview}</strong>
-        <small>Telephonic: ${totals.telephonic} · HR: ${totals.hrInterview} · Final: ${totals.finalInterview}</small>
+      <div class="report-card" title="Interviews conducted across all interview rounds">
+        <span>🎙️ Interviews</span>
+        <strong style="color:#d97706;">${totals.telephonic + totals.hrInterview + totals.finalInterview}</strong>
+        <small>Tel: ${totals.telephonic} · HR: ${totals.hrInterview} · Fin: ${totals.finalInterview}</small>
       </div>
-      <div class="report-card">
-        <span>Offers Released</span>
-        <strong>${totals.offers}</strong>
-        <small>Recorded job offers</small>
+      <div class="report-card" title="Job offers released">
+        <span>💼 Offers Released</span>
+        <strong style="color:#7c3aed;">${totals.offers}</strong>
+        <small>Job offers</small>
       </div>
-      <div class="report-card">
-        <span>Vacancies Filled</span>
-        <strong style="color:var(--green);">${totals.vacancyFilled}</strong>
+      <div class="report-card" title="Candidates successfully joined">
+        <span>🎉 Vacancies Filled</span>
+        <strong style="color:#16a34a;">${totals.vacancyFilled}</strong>
         <small>Joined successfully</small>
       </div>
     </div>
@@ -3353,10 +3353,25 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
     if (!payload.updatedAt) {
       payload.updatedAt = candidate.updatedAt || new Date().toISOString();
     }
-    const response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
+    let response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    if (response.status === 409) {
+      try {
+        const freshRes = await fetch(`${API_BASE}/api/candidates/${candidate.id}`);
+        if (freshRes.ok) {
+          const freshData = await freshRes.json();
+          if (freshData.candidate?.updatedAt) {
+            payload.updatedAt = freshData.candidate.updatedAt;
+            response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          }
+        }
+      } catch {}
+    }
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Could not save candidate stage');
     Object.assign(candidate, normalizeCandidate(result.candidate));

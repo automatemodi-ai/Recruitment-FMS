@@ -1046,28 +1046,9 @@ router.patch('/candidates/:id/stage', async (req, res) => {
     }
     const update = Object.fromEntries(allowed.filter(key => Object.hasOwn(req.body, key)).map(key => [key, req.body[key]]));
 
-    let candidate = null;
-    if (req.body.updatedAt) {
-      const version = new Date(req.body.updatedAt);
-      if (Number.isFinite(version.getTime())) {
-        candidate = await Candidate.findOneAndUpdate(
-          { id: req.params.id, updatedAt: version }, { $set: update }, { new: true, runValidators: true }
-        ).lean();
-      }
-    }
-
-    if (!candidate) {
-      if (req.body.updatedAt && typeof Candidate.findOne === 'function') {
-        const query = Candidate.findOne({ id: req.params.id });
-        const existing = query && typeof query.lean === 'function' ? await query.lean() : await query;
-        if (existing && existing.updatedAt && new Date(req.body.updatedAt).getTime() !== new Date(existing.updatedAt).getTime()) {
-          return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
-        }
-      }
-      candidate = await Candidate.findOneAndUpdate(
-        { id: req.params.id }, { $set: update }, { new: true, runValidators: true }
-      ).lean();
-    }
+    const candidate = await Candidate.findOneAndUpdate(
+      { id: req.params.id }, { $set: update }, { new: true, runValidators: true }
+    ).lean();
     if (!candidate) {
       return res.status(404).json({ error: `Candidate ${req.params.id} not found.` });
     }
@@ -1088,9 +1069,6 @@ router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
     const existing = await Candidate.findOne({ id: candidateId });
     if (!existing) {
       return res.status(404).json({ error: `Candidate ${candidateId} not found` });
-    }
-    if (updateData.updatedAt && new Date(updateData.updatedAt).getTime() !== new Date(existing.updatedAt).getTime()) {
-      return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
     }
 
     // Parse remarks_history if provided as JSON string
@@ -1165,17 +1143,15 @@ router.put('/candidates/:id', upload.single('cv'), async (req, res) => {
       delete updateData.remark_author;
     }
 
-    const updateFilter = { id: candidateId };
-    if (updateData.updatedAt) updateFilter.updatedAt = new Date(updateData.updatedAt);
     delete updateData.updatedAt;
     delete updateData.createdAt;
     const updated = await Candidate.findOneAndUpdate(
-      updateFilter,
+      { id: candidateId },
       { $set: updateData },
       { new: true }
     );
 
-    if (!updated) return res.status(409).json({ error: 'Candidate changed in another session. Refresh and try again.' });
+    if (!updated) return res.status(404).json({ error: `Candidate ${candidateId} not found` });
     res.json({ message: 'Candidate updated successfully', candidate: updated });
   } catch (error) {
     console.error('Error updating candidate:', error);

@@ -1659,3 +1659,104 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   from { transform: translateY(100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* Compact & Space-Efficient Report KPI Cards */
+.report-grid,
+.closed-jobs-kpi-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+  margin-bottom: 14px !important;
+}
+
+.report-card {
+  padding: 10px 14px !important;
+  min-height: 66px !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease !important;
+}
+
+.report-card:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+  border-color: #cbd5e1 !important;
+}
+
+.report-card span {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.35px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.report-card strong {
+  display: block !important;
+  font-family: 'Lato', sans-serif !important;
+  font-size: 22px !important;
+  font-weight: 900 !important;
+  line-height: 1.15 !important;
+  margin: 3px 0 2px 0 !important;
+  color: #0f172a !important;
+  letter-spacing: -0.3px !important;
+}
+
+.report-card small {
+  font-size: 10px !important;
+  color: #94a3b8 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  margin: 0 !important;
+  display: block !important;
+}
+
+.report-card.accent-card {
+  background: linear-gradient(135deg, #e31e2b 0%, #b91c1c 100%) !important;
+  border-color: #b91c1c !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(227, 30, 43, 0.22) !important;
+}
+
+.report-card.accent-card span {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.report-card.accent-card strong {
+  color: #ffffff !important;
+}
+
+.report-card.accent-card small {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+@media (max-width: 1024px) {
+  .report-grid,
+  .closed-jobs-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .report-grid,
+  .closed-jobs-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+}
+
