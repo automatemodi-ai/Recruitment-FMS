@@ -25,6 +25,9 @@ test('date filtering and range logic in Recruitment FMS', async (t) => {
     globalThis.applyVacancyFilters = applyVacancyFilters;
     globalThis.applyCandidateFilters = applyCandidateFilters;
     globalThis.renderFilterPanel = renderFilterPanel;
+    ${source.slice(source.indexOf('function isDateInTabPeriod('), source.indexOf('function computeReportMetrics('))}
+    globalThis.isDateInTabPeriod = isDateInTabPeriod;
+    globalThis.candidateMatchesStageInPeriod = candidateMatchesStageInPeriod;
   `;
 
   const ctx = {
@@ -179,5 +182,37 @@ test('date filtering and range logic in Recruitment FMS', async (t) => {
     assert.ok(html.includes('data-date-preset="week"'), 'HTML includes 7D preset chip');
     assert.ok(html.includes('data-date-preset="month"'), 'HTML includes Month preset chip');
     assert.ok(html.includes('data-date-preset="clear"'), 'HTML includes Clear preset chip');
+  });
+
+  await t.test('isDateInTabPeriod and date filter mutual exclusivity on reports', () => {
+    const isDateInTabPeriod = vm.runInContext('isDateInTabPeriod', ctx);
+    const candidateMatchesStageInPeriod = vm.runInContext('candidateMatchesStageInPeriod', ctx);
+    const filters = vm.runInContext('filters', ctx);
+
+    // 1. Standard Daily Report: Past date is excluded
+    filters.reports.from = '';
+    filters.reports.to = '';
+    const isPastDateDaily = isDateInTabPeriod('2026-08-15', 'daily');
+    assert.equal(isPastDateDaily, false, 'Daily report excludes past dates when no custom date is applied');
+
+    // 2. When custom date filter is applied: daily period restriction does NOT block candidates
+    filters.reports.from = '2026-08-01';
+    filters.reports.to = '2026-08-31';
+    const isPastDateWithCustomFilter = isDateInTabPeriod('2026-08-15', 'daily');
+    assert.equal(isPastDateWithCustomFilter, true, 'Daily report period restriction is deactivated when date filter is applied');
+
+    const candidate = {
+      id: 'CAN-99',
+      stage: 'CV Screened & Shortlisted',
+      timestamp: '2026-08-15T10:00:00Z',
+      stage_updated_at: '2026-08-15T10:00:00Z'
+    };
+    const matchesStage = candidateMatchesStageInPeriod(candidate, ['CV Screened & Shortlisted'], 'daily');
+    assert.equal(matchesStage, true, 'candidateMatchesStageInPeriod succeeds under custom date filter');
+
+    // 3. When report tab is selected, clearing date filter restores standard daily behavior
+    filters.reports.from = '';
+    filters.reports.to = '';
+    assert.equal(isDateInTabPeriod('2026-08-15', 'daily'), false, 'Standard daily behavior restored after clearing');
   });
 });

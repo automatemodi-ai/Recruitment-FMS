@@ -1613,9 +1613,13 @@ let activeReportTab = 'daily';
 
 function isDateInTabPeriod(dateValue, tab) {
   if (tab === 'vacancy' || tab === 'closed_jobs') return true;
+  // When custom date filter is active on Reports, bypass daily/weekly/monthly restriction
+  if (filters.reports && (filters.reports.from || filters.reports.to)) {
+    return true;
+  }
   if (!dateValue) return false;
-  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue)) ? `${dateValue}T00:00:00` : dateValue);
-  if (Number.isNaN(date.getTime())) return false;
+  const date = parseDateValue(dateValue);
+  if (!date) return false;
   const now = new Date();
 
   if (tab === 'daily') {
@@ -1638,7 +1642,8 @@ function isDateInTabPeriod(dateValue, tab) {
 }
 
 function candidateMatchesStageInPeriod(c, targetStages, tab) {
-  if (tab === 'vacancy' || tab === 'closed_jobs') {
+  const customDateActive = Boolean(filters.reports && (filters.reports.from || filters.reports.to));
+  if (tab === 'vacancy' || tab === 'closed_jobs' || customDateActive) {
     return targetStages.some(s => c.stage === s || (c.stage_history || []).some(h => h.stage === s || h.to_stage === s));
   }
   if (targetStages.includes(c.stage) && isDateInTabPeriod(c.stage_updated_at || c.timestamp, tab)) {
@@ -1964,6 +1969,7 @@ function exportReportToCsv(tabType, rows, totals) {
 }
 
 function reports() {
+  const isCustomDate = Boolean(filters.reports && (filters.reports.from || filters.reports.to));
   let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
   const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
 
@@ -1992,18 +1998,26 @@ function reports() {
     closed_jobs: "Master Closed Jobs Report: Completed requisitions, TAT days, joined candidates, and closure funnel"
   };
 
-  const reportTitle = activeReportTab === 'daily' ? 'Daily Report'
+  let reportTitle = activeReportTab === 'daily' ? 'Daily Report'
     : activeReportTab === 'weekly' ? 'Weekly Report'
     : activeReportTab === 'monthly' ? 'Monthly Report'
     : activeReportTab === 'closed_jobs' ? 'Closed Jobs Report'
     : 'Vacancy Report';
+
+  let reportSubtitle = tabDescriptions[activeReportTab] || 'Recruitment performance at a glance.';
+  if (isCustomDate && ['daily', 'weekly', 'monthly'].includes(activeReportTab)) {
+    const fromLabel = filters.reports.from || 'Start';
+    const toLabel = filters.reports.to || 'End';
+    reportTitle = `Custom Date Report (${fromLabel} to ${toLabel})`;
+    reportSubtitle = `Custom Date Filter active (${fromLabel} to ${toLabel}). Daily/Weekly/Monthly automatic period restriction is deactivated.`;
+  }
 
   return `
   <div class="page-intro">
     <div>
       <span class="section-kicker">FMS EXECUTIVE REPORTING</span>
       <h2>${reportTitle}</h2>
-      <p>${tabDescriptions[activeReportTab] || 'Recruitment performance at a glance.'}</p>
+      <p>${reportSubtitle}</p>
     </div>
     <button class="secondary" data-action="export-report-csv" style="display:flex; align-items:center; gap:8px;">
       <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -2012,13 +2026,13 @@ function reports() {
   </div>
 
   <div class="report-tabs">
-    <button type="button" class="report-tab-btn ${activeReportTab === 'daily' ? 'active' : ''}" data-report-tab="daily">
+    <button type="button" class="report-tab-btn ${!isCustomDate && activeReportTab === 'daily' ? 'active' : ''}" data-report-tab="daily">
       <span>📅</span> Daily Report
     </button>
-    <button type="button" class="report-tab-btn ${activeReportTab === 'weekly' ? 'active' : ''}" data-report-tab="weekly">
+    <button type="button" class="report-tab-btn ${!isCustomDate && activeReportTab === 'weekly' ? 'active' : ''}" data-report-tab="weekly">
       <span>📆</span> Weekly Report
     </button>
-    <button type="button" class="report-tab-btn ${activeReportTab === 'monthly' ? 'active' : ''}" data-report-tab="monthly">
+    <button type="button" class="report-tab-btn ${!isCustomDate && activeReportTab === 'monthly' ? 'active' : ''}" data-report-tab="monthly">
       <span>🗓️</span> Monthly Report
     </button>
     <button type="button" class="report-tab-btn ${activeReportTab === 'vacancy' ? 'active' : ''}" data-report-tab="vacancy">
@@ -2027,6 +2041,12 @@ function reports() {
     <button type="button" class="report-tab-btn ${activeReportTab === 'closed_jobs' ? 'active' : ''}" data-report-tab="closed_jobs">
       <span>🔒</span> Closed Jobs Report
     </button>
+    ${isCustomDate ? `
+      <div class="custom-date-report-badge">
+        <span>⚡ Custom Date Active (${filters.reports.from || 'Start'} to ${filters.reports.to || 'End'})</span>
+        <button type="button" class="clear-report-date-btn" data-action="clear-report-dates" title="Clear date filter and return to ${activeReportTab === 'daily' ? 'Daily' : activeReportTab === 'weekly' ? 'Weekly' : 'Monthly'} Report">Clear Date Filter ✕</button>
+      </div>
+    ` : ''}
   </div>
 
   ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: commonDateOptions, department: true, source: true, status: true })}
@@ -2542,6 +2562,17 @@ function bindEvents() {
   });
   document.querySelectorAll('.report-tab-btn').forEach(button => button.onclick = () => {
     activeReportTab = button.dataset.reportTab;
+    if (filters.reports) {
+      filters.reports.from = '';
+      filters.reports.to = '';
+    }
+    render();
+  });
+  document.querySelectorAll('[data-action="clear-report-dates"]').forEach(button => button.onclick = () => {
+    if (filters.reports) {
+      filters.reports.from = '';
+      filters.reports.to = '';
+    }
     render();
   });
   document.querySelectorAll('[data-filter-set-status]').forEach(button => button.onclick = () => {
