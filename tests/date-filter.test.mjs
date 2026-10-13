@@ -21,6 +21,8 @@ test('date filtering and range logic in Recruitment FMS', async (t) => {
     globalThis.matchesDateRange = matchesDateRange;
     globalThis.getVacancyDate = getVacancyDate;
     globalThis.getCandidateDate = getCandidateDate;
+    ${source.slice(source.indexOf('function formatDateTime('), source.indexOf('function formatDuration('))}
+    globalThis.formatDateTime = formatDateTime;
     ${source.slice(source.indexOf('function applyVacancyFilters('), source.indexOf('function save()'))}
     globalThis.applyVacancyFilters = applyVacancyFilters;
     globalThis.applyCandidateFilters = applyCandidateFilters;
@@ -28,6 +30,8 @@ test('date filtering and range logic in Recruitment FMS', async (t) => {
     ${source.slice(source.indexOf('function isDateInTabPeriod('), source.indexOf('function computeReportMetrics('))}
     globalThis.isDateInTabPeriod = isDateInTabPeriod;
     globalThis.candidateMatchesStageInPeriod = candidateMatchesStageInPeriod;
+    ${source.slice(source.indexOf('function computeReportMetrics('), source.indexOf('function computeClosedJobsReport('))}
+    globalThis.computeReportMetrics = computeReportMetrics;
   `;
 
   const ctx = {
@@ -214,5 +218,25 @@ test('date filtering and range logic in Recruitment FMS', async (t) => {
     filters.reports.from = '';
     filters.reports.to = '';
     assert.equal(isDateInTabPeriod('2026-08-15', 'daily'), false, 'Standard daily behavior restored after clearing');
+  });
+
+  await t.test('computeReportMetrics calculates latestUpdate timestamp for roles and totals', () => {
+    const computeReportMetrics = vm.runInContext('computeReportMetrics', ctx);
+    const formatDateTime = vm.runInContext('formatDateTime', ctx);
+
+    const testCandidates = [
+      { id: 'C-1', role: 'Sales Executive', timestamp: '2026-10-10T10:00:00Z', stage: 'Application Received (New)', screening_status: 'Shortlisted', stage_updated_at: '2026-10-12T14:30:00Z' },
+      { id: 'C-2', role: 'Sales Executive', timestamp: '2026-10-11T11:00:00Z', stage: 'Interview Scheduled', stage_updated_at: '2026-10-13T09:15:00Z' }
+    ];
+    const testVacancies = [
+      { id: 'V-1', title: 'Sales Executive', department: 'Sales', status: 'Open' }
+    ];
+
+    const { rows, totals } = computeReportMetrics('daily', testVacancies, testCandidates);
+    const salesRow = rows.find(r => r.role === 'Sales Executive');
+    assert.ok(salesRow, 'Sales Executive row found');
+    assert.equal(salesRow.latestUpdate, '2026-10-13T09:15:00Z', 'Role latestUpdate matches most recent candidate update');
+    assert.equal(totals.latestUpdate, '2026-10-13T09:15:00Z', 'Totals latestUpdate matches overall most recent candidate update');
+    assert.ok(formatDateTime(salesRow.latestUpdate).includes('2026'), 'formatDateTime renders valid human readable timestamp');
   });
 });

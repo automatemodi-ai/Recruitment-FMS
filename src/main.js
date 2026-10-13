@@ -719,13 +719,16 @@ function moveRecordToStage(record, nextStage, fallbackStage, actionNotes = '') {
         entered_at: currentStamp.entered_at,
         exited_at: movedAt,
         completed_at: movedAt,
+        updated_at: movedAt,
         duration: formatDuration(currentStamp.entered_at, movedAt),
-        notes: actionNotes || ''
+        notes: actionNotes || '',
+        updated_by: currentUser?.name || currentUser?.email?.split('@')[0] || 'Recruiter'
       });
     }
   }
   record.stage = nextStage;
   record.stage_updated_at = movedAt;
+  record.updatedAt = movedAt;
   record.stage_timestamps = record.stage_timestamps || {};
   record.stage_timestamps[nextStage] = {
     entered_at: movedAt,
@@ -1093,7 +1096,7 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
                   <tr>
                     <th style="text-align: left;">Candidate Name</th>
                     <th style="text-align: left;">Current Stage</th>
-                    <th style="text-align: left;">Time in Stage</th>
+                    <th style="text-align: left;">Time in Stage / Step Updated</th>
                     <th style="text-align: left;">Phone & Location</th>
                     <th style="text-align: left;">Screening Status</th>
                     <th style="text-align: center;">Profile Action</th>
@@ -1109,6 +1112,7 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
                             <div>
                               <strong style="font-size: 13px; color: var(--green); display: block;">${escapeHtml(c.name)}</strong>
                               <small style="color: var(--muted); font-size: 10px; display: block;">${escapeHtml(c.id || '')} ${c.experience ? `· ${escapeHtml(c.experience)}` : ''}</small>
+                              <small style="color: #64748b; font-size: 10px; display: block; margin-top: 1px;">📅 Applied: ${formatDateTime(c.timestamp || c.createdAt)}</small>
                             </div>
                           </div>
                         </button>
@@ -1122,6 +1126,9 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
                           ⏱ ${daysInStage(c)} day${daysInStage(c) === 1 ? '' : 's'}
                           ${isStageOverdue(c) ? ' <b style="color:var(--red);">(TAT Overdue)</b>' : ''}
                         </span>
+                        <div style="font-size: 10px; color: #475569; margin-top: 3px; font-weight: 500; display: flex; align-items: center; gap: 4px;" title="Step Last Updated Timestamp">
+                          <span style="color:#64748b;">🕒</span> <strong>Updated:</strong> <span>${formatDateTime(c.stage_updated_at || c.updatedAt || c.timestamp)}</span>
+                        </div>
                       </td>
                       <td style="font-size: 11px; color: var(--ink);">
                         <div>${escapeHtml(c.phone || '-')}</div>
@@ -1134,6 +1141,9 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
                         <div style="display: flex; gap: 6px; justify-content: center; align-items: center; flex-wrap: wrap;">
                           <button type="button" class="text-button" data-action="view-candidate" data-id="${c.id}" style="color: var(--green); font-weight: 700; font-size: 11px; cursor: pointer; padding: 4px 8px; border: 1px solid #c8e0d6; border-radius: 4px; background: #f4f9f6;">
                             View ↗
+                          </button>
+                          <button type="button" class="text-button open-step-history" data-type="candidate" data-id="${c.id}" title="View step transition timestamps & audit history" style="color: #2563eb; font-weight: 600; font-size: 11px; cursor: pointer; padding: 4px 8px; border: 1px solid #bfdbfe; border-radius: 4px; background: #eff6ff;">
+                            🕒 Steps
                           </button>
                           <button type="button" class="candidate-edit-btn" data-id="${c.id}" style="padding: 4px 8px; font-size: 11px;">
                             ✏️ Edit
@@ -1518,14 +1528,17 @@ function candidates(list) {
 
     return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add application</button></div></div>
     ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, role: true, source: true, screeningStatus: true })}
-    <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
+    <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small style="color: #475569; display: block; margin-top: 2px;">🕒 Updated: <b>${formatDateTime(item.stage_updated_at || item.updatedAt || item.timestamp)}</b></small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
       <option ${item.screening_status === 'Shortlisted' ? 'selected' : ''}>Shortlisted</option>
       <option ${item.screening_status === 'Rejected' ? 'selected' : ''}>Rejected</option>
       <option ${item.screening_status === 'Hold' ? 'selected' : ''}>Hold</option>
     </select></td>
     <td>
-      <button type="button" class="candidate-edit-btn" data-id="${item.id}" title="Edit candidate details">✏️ Edit</button>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <button type="button" class="text-button open-step-history" data-type="candidate" data-id="${item.id}" title="View step history and timestamps" style="color: #2563eb; font-weight: 600; font-size: 11px; cursor: pointer; padding: 4px 8px; border: 1px solid #bfdbfe; border-radius: 4px; background: #eff6ff;">🕒 Steps</button>
+        <button type="button" class="candidate-edit-btn" data-id="${item.id}" title="Edit candidate details" style="padding: 4px 8px; font-size: 11px;">✏️ Edit</button>
+      </div>
     </td></tr>`).join('')}${rows.length === 0 ? `<tr><td colspan="7" style="text-align:center; padding:40px; color:#9aa6a2;">No applications match the selected filters</td></tr>` : ''}</tbody></table></section>
     ${renderPaginationControls(paged, 'screening')}`;
   } else {
@@ -1556,7 +1569,7 @@ function candidates(list) {
     return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${pipelineCandidates.length} active candidates in pipeline</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add Candidate</button></div></div>
     ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, role: true, source: true })}
     ${tabsHtml}
-    <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
+    <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small><small style="color: #475569; display: block; margin-top: 2px;">🕒 Step Updated: <b>${formatDateTime(item.stage_updated_at || item.updatedAt || item.timestamp)}</b></small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
     <td>
       ${renderActionButtons(item)}
     </td></tr>`).join('')}
@@ -1586,6 +1599,7 @@ function renderActionButtons(candidate) {
   if (candidate.stage === 'Candidate Joined (Closed - Won)') {
     return `<div class="candidate-actions" style="align-items:center;">
       <span style="color:#16a34a; font-size:11px; font-weight:700; background:#eaf8ef; padding:4px 8px; border-radius:4px;">🎉 Joined (Won)</span>
+      <button type="button" class="text-button open-step-history" data-type="candidate" data-id="${candidate.id}" title="View step history" style="color: #2563eb; font-size:11px; padding:4px 8px; border:1px solid #bfdbfe; border-radius:4px; background:#eff6ff;">🕒 Steps</button>
       <button type="button" class="candidate-edit-btn" data-id="${candidate.id}" title="Edit candidate information">✏️ Edit</button>
     </div>`;
   }
@@ -1597,6 +1611,7 @@ function renderActionButtons(candidate) {
   if (candidate.stage !== 'On Hold') {
     html += `<button type="button" class="hold-btn" data-id="${candidate.id}" data-next="On Hold" style="background:#fff8e8; color:#9b6a1d; border:1px solid #f6e5bd; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer;">Hold</button>`;
   }
+  html += `<button type="button" class="text-button open-step-history" data-type="candidate" data-id="${candidate.id}" title="View step history" style="color: #2563eb; font-size:11px; padding:5px 8px; border:1px solid #bfdbfe; border-radius:4px; background:#eff6ff; font-weight:600; cursor:pointer;">🕒 Steps</button>`;
   if (candidate.stage !== 'Dropped / Ghosted') {
     html += `<button type="button" class="drop-btn" data-id="${candidate.id}" data-next="Dropped / Ghosted" style="background:#f4f5f4; color:#71807d; border:1px solid #dfe7e2; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer;">Drop</button>`;
   }
@@ -1672,7 +1687,9 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
         hrInterview: 0,
         finalInterview: 0,
         offers: 0,
-        vacancyFilled: 0
+        vacancyFilled: 0,
+        latestUpdate: null,
+        latestTimestamp: 0
       });
     } else {
       roleMap.get(roleName).vacanciesCount++;
@@ -1693,7 +1710,9 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
         hrInterview: 0,
         finalInterview: 0,
         offers: 0,
-        vacancyFilled: 0
+        vacancyFilled: 0,
+        latestUpdate: null,
+        latestTimestamp: 0
       });
     }
   });
@@ -1703,6 +1722,14 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
     const roleName = (c.role || 'General Position').trim();
     const entry = roleMap.get(roleName);
     if (!entry) return;
+
+    // Track latest candidate update timestamp for this role
+    const updateTimeStr = c.stage_updated_at || c.updatedAt || c.timestamp || c.createdAt;
+    const cTime = parseDateValue(updateTimeStr)?.getTime() || 0;
+    if (cTime > (entry.latestTimestamp || 0)) {
+      entry.latestTimestamp = cTime;
+      entry.latestUpdate = updateTimeStr;
+    }
 
     // No. of Candidates Reached / Forms Filled
     if (isDateInTabPeriod(c.timestamp || c.createdAt, reportTab)) {
@@ -1755,7 +1782,12 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
     hrInterview: rows.reduce((s, r) => s + r.hrInterview, 0),
     finalInterview: rows.reduce((s, r) => s + r.finalInterview, 0),
     offers: rows.reduce((s, r) => s + r.offers, 0),
-    vacancyFilled: rows.reduce((s, r) => s + r.vacancyFilled, 0)
+    vacancyFilled: rows.reduce((s, r) => s + r.vacancyFilled, 0),
+    latestUpdate: rows.reduce((latest, r) => {
+      if (!r.latestUpdate) return latest;
+      const t = parseDateValue(r.latestUpdate)?.getTime() || 0;
+      return (!latest || t > (parseDateValue(latest)?.getTime() || 0)) ? r.latestUpdate : latest;
+    }, null)
   };
 
   return { rows, totals };
@@ -1925,7 +1957,8 @@ function exportReportToCsv(tabType, rows, totals) {
     'No. of HR Interview',
     'No. of Final Interview',
     'No. of Offers',
-    'No. of Vacancy Filled'
+    'No. of Vacancy Filled',
+    'Latest Step Timestamp'
   ];
 
   const csvLines = [
@@ -1941,7 +1974,8 @@ function exportReportToCsv(tabType, rows, totals) {
       r.hrInterview,
       r.finalInterview,
       r.offers,
-      r.vacancyFilled
+      r.vacancyFilled,
+      `"${r.latestUpdate ? formatDateTime(r.latestUpdate) : '-'}"`
     ].join(','));
   });
 
@@ -1953,7 +1987,8 @@ function exportReportToCsv(tabType, rows, totals) {
     totals.hrInterview,
     totals.finalInterview,
     totals.offers,
-    totals.vacancyFilled
+    totals.vacancyFilled,
+    `"${totals.latestUpdate ? formatDateTime(totals.latestUpdate) : '-'}"`
   ].join(','));
 
   const csvContent = '\uFEFF' + csvLines.join('\r\n');
@@ -2018,6 +2053,7 @@ function reports() {
       <span class="section-kicker">FMS EXECUTIVE REPORTING</span>
       <h2>${reportTitle}</h2>
       <p>${reportSubtitle}</p>
+      <div style="font-size:11px; color:var(--muted); margin-top:4px;">🕒 Live Report Timestamp: <strong>${formatDateTime(new Date())}</strong></div>
     </div>
     <button class="secondary" data-action="export-report-csv" style="display:flex; align-items:center; gap:8px;">
       <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -2111,9 +2147,9 @@ function reports() {
             <tr style="background:#f8faf9; border-bottom:1px solid var(--line);">
               <th style="text-align:left; min-width:190px;">Closed Vacancy & Code</th>
               <th style="text-align:left; min-width:130px;">Dept & Location</th>
-              <th style="text-align:left; min-width:140px;">Opening → Closed</th>
+              <th style="text-align:left; min-width:160px;">Opening → Closed</th>
               <th style="text-align:center; min-width:90px;">TAT</th>
-              <th style="text-align:left; min-width:170px;">Joined Candidate</th>
+              <th style="text-align:left; min-width:180px;">Joined Candidate & Timestamp</th>
               <th style="text-align:center; min-width:160px;">Recruitment Funnel</th>
               <th style="text-align:center; min-width:110px;">Owner & Status</th>
             </tr>
@@ -2133,8 +2169,8 @@ function reports() {
                   <small style="color:var(--muted);">📍 ${escapeHtml(r.location)}</small>
                 </td>
                 <td style="font-size:11px;">
-                  <div>Opened: <strong>${r.openedOn}</strong></div>
-                  <div style="color:var(--green); font-weight:600;">Closed: <strong>${r.closedOn}</strong></div>
+                  <div>📅 Opened: <strong>${formatDateTime(r.openedOn)}</strong></div>
+                  <div style="color:var(--green); font-weight:600; margin-top:2px;">🏁 Closed: <strong>${formatDateTime(r.closedOn)}</strong></div>
                 </td>
                 <td style="text-align:center;">
                   <span class="tat-badge ${r.tat <= 15 ? 'fast' : r.tat <= 30 ? 'normal' : 'extended'}">
@@ -2153,6 +2189,7 @@ function reports() {
                       <span>✓</span> <strong>${escapeHtml(r.joinedName)}</strong>
                     </span>
                   `}
+                  <small style="display:block; color:var(--muted); font-size:10px; margin-top:2px;">🕒 Joined: ${formatDateTime(r.joinedCandidate?.stage_updated_at || r.joinedCandidate?.updatedAt || r.closedOn)}</small>
                 </td>
                 <td style="text-align:center; font-size:11px;">
                   <div style="display:flex; justify-content:center; gap:8px; color:var(--ink);">
@@ -2223,6 +2260,7 @@ function reports() {
               <th style="text-align:center; min-width:120px;">No. of Final Interview</th>
               <th style="text-align:center; min-width:100px;">No. of Offers</th>
               <th style="text-align:center; min-width:120px;">No. of Vacancy Filled</th>
+              <th style="text-align:center; min-width:160px;">Latest Step / Activity Timestamp</th>
             </tr>
           </thead>
           <tbody>
@@ -2239,9 +2277,10 @@ function reports() {
                 <td style="text-align:center; font-weight:600; color:${r.finalInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.finalInterview}</td>
                 <td style="text-align:center; font-weight:600; color:${r.offers > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.offers}</td>
                 <td style="text-align:center; font-weight:700; color:${r.vacancyFilled > 0 ? 'var(--green)' : 'var(--muted)'};">${r.vacancyFilled}</td>
+                <td style="text-align:center; font-size:11px; color:#334155; white-space:nowrap;">${r.latestUpdate ? `🕒 <strong>${formatDateTime(r.latestUpdate)}</strong>` : '<span style="color:var(--muted);">-</span>'}</td>
               </tr>
             `).join('')}
-            ${rows.length === 0 ? `<tr><td colspan="8" style="text-align:center; padding:40px; color:#9aa6a2;">No recruitment activity found for the selected timeframe.</td></tr>` : ''}
+            ${rows.length === 0 ? `<tr><td colspan="9" style="text-align:center; padding:40px; color:#9aa6a2;">No recruitment activity found for the selected timeframe.</td></tr>` : ''}
           </tbody>
           ${rows.length > 0 ? `
           <tfoot>
@@ -2254,6 +2293,7 @@ function reports() {
               <td style="text-align:center;">${totals.finalInterview}</td>
               <td style="text-align:center;">${totals.offers}</td>
               <td style="text-align:center; color:var(--green);">${totals.vacancyFilled}</td>
+              <td style="text-align:center; font-size:11px; font-weight:700; color:#1e293b;">${totals.latestUpdate ? `🕒 ${formatDateTime(totals.latestUpdate)}` : '-'}</td>
             </tr>
           </tfoot>
           ` : ''}
@@ -2652,6 +2692,8 @@ function openCandidateDetails(candidateId) {
       <div class="profile-status">
         <span>Screening: <b>${escapeHtml(candidate.screening_status || 'Pending Review')}</b></span>
         <span>Stage: <b>${escapeHtml(candidate.stage || 'CV Screening')}</b></span>
+        <span>🕒 Last Updated: <b>${formatDateTime(candidate.stage_updated_at || candidate.updatedAt || candidate.timestamp)}</b></span>
+        <span>📅 Applied: <b>${formatDateTime(candidate.timestamp || candidate.createdAt)}</b></span>
         ${candidate.next_action ? `<span>Next Action: <b>${escapeHtml(candidate.next_action)}</b>${candidate.next_action_date ? ` (Due ${escapeHtml(candidate.next_action_date)})` : ''}</span>` : ''}
       </div>
       <div class="detail-section">
@@ -3206,7 +3248,19 @@ function openStageUpdate(candidateId, nextStage, select, onSave) {
   const modal = document.createElement('div');
   modal.className = 'modal-backdrop';
   const fields = needsInterview ? '<label>Interview date<input type="date" name="interview_date" required></label><label>Interview time<input type="time" name="interview_time" required></label><label>Interviewer name<input name="interviewer" required></label>' : needsEvaluation ? '<label>Interview rating (out of 10)<input type="number" name="interview_rating" min="0" max="10" required></label><label>Interview remarks<textarea name="interview_remarks" rows="3" required></textarea></label>' : needsOffer ? '<label>Offer release date<input type="date" name="offer_date" required></label><label>Offered CTC<input type="number" name="offered_ctc" required></label>' : needsJoining ? '<label>Expected joining date<input type="date" name="joining_date" required></label>' : '<label>Reason for rejection<select name="rejection_reason" required><option value="">Select reason</option><option>High salary expectation</option><option>Lack of skills</option><option>Culture fit</option><option>Notice period</option><option>Other</option></select></label>';
-  modal.innerHTML = `<form class="modal stage-update-modal"><button type="button" class="modal-close">×</button><span class="section-kicker">PIPELINE UPDATE</span><h2>${escapeHtml(nextStage)}</h2><p class="modal-subtitle">${escapeHtml(candidate.name)} · ${escapeHtml(candidate.role)}</p>${fields}<label>Next action<input name="next_action" value="${escapeHtml(candidate.next_action || '')}" placeholder="e.g. Call candidate for confirmation"></label><label>Next action due date<input type="date" name="next_action_date" value="${escapeHtml(candidate.next_action_date || '')}"></label><label>Additional remarks<textarea name="remarks" rows="2" placeholder="Add remarks or notes for this stage update...">${escapeHtml(candidate.remarks || '')}</textarea></label><button class="primary" type="submit">Save stage update</button></form>`;
+  const transitionSummary = `
+    <div style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; padding:10px 14px; margin: 10px 0 14px; font-size:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; flex-wrap:wrap; gap:4px;">
+        <span>⏱️ <strong>Previous Step:</strong> ${escapeHtml(candidate.stage)}</span>
+        <span style="color:#64748b; font-size:11px;">Started: <b>${formatDateTime(candidate.stage_updated_at || candidate.timestamp)}</b> (${daysInStage(candidate)}d in step)</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; color:#0f766e; font-weight:600; flex-wrap:wrap; gap:4px;">
+        <span>▶ <strong>Advancing to Step:</strong> ${escapeHtml(nextStage)}</span>
+        <span style="font-size:11px;">🕒 Timestamp: <b>${formatDateTime(new Date())}</b></span>
+      </div>
+    </div>
+  `;
+  modal.innerHTML = `<form class="modal stage-update-modal"><button type="button" class="modal-close">×</button><span class="section-kicker">PIPELINE UPDATE</span><h2>${escapeHtml(nextStage)}</h2><p class="modal-subtitle">${escapeHtml(candidate.name)} · ${escapeHtml(candidate.role)}</p>${transitionSummary}${fields}<label>Next action<input name="next_action" value="${escapeHtml(candidate.next_action || '')}" placeholder="e.g. Call candidate for confirmation"></label><label>Next action due date<input type="date" name="next_action_date" value="${escapeHtml(candidate.next_action_date || '')}"></label><label>Additional remarks<textarea name="remarks" rows="2" placeholder="Add remarks or notes for this stage update...">${escapeHtml(candidate.remarks || '')}</textarea></label><button class="primary" type="submit">Save stage update</button></form>`;
   mountModal(modal);
   const close = () => { if (select) select.value = candidate.stage || candidate.screening_status; modal.remove(); };
   modal.querySelector('.modal-close').onclick = close;
@@ -3251,7 +3305,12 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
   _savingCandidateId = candidate.id;
   _dataRevision++;
   Object.assign(candidate, draft);
-  if (candidate.stage !== nextStage) moveRecordToStage(candidate, nextStage, 'Application Received (New)');
+  const movedAt = typeof nowIso === 'function' ? nowIso() : new Date().toISOString();
+  candidate.stage_updated_at = movedAt;
+  if (candidate.stage !== nextStage) {
+    const actionNote = draft.remarks || draft.interview_remarks || draft.next_action || '';
+    moveRecordToStage(candidate, nextStage, 'Application Received (New)', actionNote);
+  }
   
   if (nextStage === 'Rejected') {
     candidate.screening_status = 'Rejected';
