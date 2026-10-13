@@ -524,11 +524,11 @@ function matchCandidateSearch(c, query) {
   return terms.every(term => searchableText.includes(term));
 }
 const filterDefaults = {
-  dashboard: { department: '', source: '', status: 'Open' },
-  vacancies: { department: '', status: '' },
-  screening: { department: '', role: '', source: '', screening_status: '' },
-  candidates: { department: '', role: '', source: '' },
-  reports: { department: '', source: '', status: '' }
+  dashboard: { department: '', source: '', status: 'Open', dateField: 'created', from: '', to: '' },
+  vacancies: { department: '', status: '', dateField: 'opened', from: '', to: '' },
+  screening: { department: '', role: '', source: '', screening_status: '', dateField: 'created', from: '', to: '' },
+  candidates: { department: '', role: '', source: '', dateField: 'created', from: '', to: '' },
+  reports: { department: '', source: '', status: '', dateField: 'created', from: '', to: '' }
 };
 let filters = Object.fromEntries(Object.entries(filterDefaults).map(([key, value]) => [key, { ...value }]));
 
@@ -571,8 +571,37 @@ const candidateDateOptions = [
   { value: 'interview', label: 'Interview Date' },
   { value: 'offer', label: 'Offer Date' },
   { value: 'joining', label: 'Joining Date' },
-  { value: 'due', label: 'Next Action Date' }
+  { value: 'due', label: 'Next Action Date' },
+  { value: 'closed', label: 'Joined / Closed' }
 ];
+
+function getDatePresetRange(preset) {
+  const now = new Date();
+  const formatYMD = d => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = formatYMD(now);
+
+  if (preset === 'today') {
+    return { from: todayStr, to: todayStr };
+  }
+  if (preset === 'week') {
+    const weekAgo = new Date(now);
+    weekAgo.setDate(now.getDate() - 6);
+    return { from: formatYMD(weekAgo), to: todayStr };
+  }
+  if (preset === 'month') {
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { from: formatYMD(startOfMonth), to: todayStr };
+  }
+  if (preset === 'clear') {
+    return { from: '', to: '' };
+  }
+  return null;
+}
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const normalizePhone = phone => {
@@ -593,8 +622,19 @@ const linkedVacancy = candidate => data.vacancies.find(vacancy => sameFilterValu
 
 function parseDateValue(value) {
   if (!value) return null;
-  const text = String(value);
-  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00` : text);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const d = new Date(`${text}T00:00:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const dmyMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (dmyMatch) {
+    const [, day, month, year, h = '00', m = '00', s = '00'] = dmyMatch;
+    const d = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${h.padStart(2, '0')}:${m}:${s}`);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  const date = new Date(text);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -611,7 +651,7 @@ function getVacancyDate(vacancy, field) {
   if (field === 'deadline' || field === 'due') return vacancy.deadline;
   if (field === 'updated') return vacancy.stage_updated_at;
   if (field === 'closed') return vacancy.filledOn;
-  return vacancy.openedOn || vacancy.created_at || vacancy.stage_updated_at;
+  return vacancy.openedOn || vacancy.createdAt || vacancy.created_at || vacancy.stage_updated_at;
 }
 
 function getCandidateDate(candidate, field) {
@@ -621,7 +661,7 @@ function getCandidateDate(candidate, field) {
   if (field === 'joining') return candidate.joining_date;
   if (field === 'due') return candidate.next_action_date || candidate.interview_date || candidate.joining_date;
   if (field === 'closed') return candidate.joining_date || (candidate.stage === 'Candidate Joined (Closed - Won)' ? candidate.stage_updated_at : '');
-  return candidate.timestamp || candidate.created_at || candidate.stage_updated_at;
+  return candidate.timestamp || candidate.createdAt || candidate.created_at || candidate.stage_updated_at;
 }
 
 function formatDateTime(value) {
@@ -866,6 +906,27 @@ function renderSelectFilter(filterKey, label, options, placeholder, selectedValu
   return `<label class="filter-field"><span>${label}</span><select class="filter-control ${hasVal ? 'has-value' : ''}" data-filter-key="${filterKey}"><option value="">${placeholder}</option>${options.map(option => `<option value="${escapeHtml(option)}" ${sameFilterValue(selectedValue, option) ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;
 }
 
+function renderDateByFilter(filterKey, label, options, selectedValue, isDateActive = false) {
+  return `<label class="filter-field"><span>${label}</span><select class="filter-control ${isDateActive ? 'has-value' : ''}" data-filter-key="${filterKey}">${options.map(option => `<option value="${escapeHtml(option.value)}" ${sameFilterValue(selectedValue, option.value) ? 'selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}</select></label>`;
+}
+
+function renderDateInputFilter(filterKey, label, value) {
+  const hasVal = value !== undefined && value !== null && String(value).trim() !== '';
+  return `<label class="filter-field date-field"><span>${label}</span><input type="date" class="filter-control date-control ${hasVal ? 'has-value' : ''}" data-filter-key="${filterKey}" value="${escapeHtml(value || '')}"></label>`;
+}
+
+function renderDateQuickPresets(key) {
+  return `<div class="filter-field filter-date-presets-field">
+    <span>Quick Range</span>
+    <div class="date-preset-chips">
+      <button type="button" class="date-preset-btn" data-date-preset-view="${key}" data-date-preset="today" title="Set range to Today">Today</button>
+      <button type="button" class="date-preset-btn" data-date-preset-view="${key}" data-date-preset="week" title="Set range to Last 7 Days">7D</button>
+      <button type="button" class="date-preset-btn" data-date-preset-view="${key}" data-date-preset="month" title="Set range to This Month">Month</button>
+      <button type="button" class="date-preset-btn clear" data-date-preset-view="${key}" data-date-preset="clear" title="Clear Date Range">Clear</button>
+    </div>
+  </div>`;
+}
+
 const filterPanelExpanded = new Map();
 
 function renderFilterPanel(key, settings) {
@@ -887,7 +948,24 @@ function renderFilterPanel(key, settings) {
   }
   if (settings.source) fields.push(renderSelectFilter('source', 'Source', sourceOptions, 'All sources', filter.source));
   if (settings.screeningStatus) fields.push(renderSelectFilter('screening_status', 'Screening', ['Pending Review', 'Shortlisted', 'Rejected', 'Hold'], 'All screening', filter.screening_status));
-  const activeCount = Object.values(filter).filter(val => val !== undefined && val !== null && String(val).trim() !== '').length;
+
+  // Date filters
+  const dateOptions = settings.dateOptions || (key === 'vacancies' ? vacancyDateOptions : (key === 'screening' || key === 'candidates') ? candidateDateOptions : commonDateOptions);
+  if (settings.dateFilter !== false && dateOptions && dateOptions.length > 0) {
+    const isDateActive = Boolean(filter.from || filter.to);
+    fields.push(renderDateByFilter('dateField', 'Date By', dateOptions, filter.dateField || dateOptions[0]?.value, isDateActive));
+    fields.push(renderDateInputFilter('from', 'From Date', filter.from));
+    fields.push(renderDateInputFilter('to', 'To Date', filter.to));
+    fields.push(renderDateQuickPresets(key));
+  }
+
+  const defaults = filterDefaults[key] || {};
+  const activeCount = Object.entries(filter).filter(([field, value]) => {
+    if (field === 'dateField') return false;
+    const defaultVal = defaults[field] ?? '';
+    const currentVal = value ?? '';
+    return String(currentVal).trim() !== String(defaultVal).trim();
+  }).length;
   const expanded = filterPanelExpanded.get(key) ?? !window.matchMedia('(max-width: 640px)').matches;
   return `<section class="filter-panel" data-filter-view="${key}">
     <div class="filter-head">
@@ -1127,6 +1205,7 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
 
   return `${renderFilterPanel('dashboard', {
     title: 'Dashboard data view',
+    dateOptions: commonDateOptions,
     department: true,
     source: true,
     status: true,
@@ -1339,7 +1418,7 @@ function vacancies() {
   const paged = paginate(rows, 'vacancies');
 
   return `<div class="page-intro"><div><span class="section-kicker">VACANCY FMS</span><p>Master Control Room: Track every job opening from requisition to closure.</p></div><button class="primary" data-action="new-vacancy">+ Add vacancy</button></div>
-  ${renderFilterPanel('vacancies', { title: 'Vacancy data view', department: true, status: true })}
+  ${renderFilterPanel('vacancies', { title: 'Vacancy data view', dateOptions: vacancyDateOptions, department: true, status: true })}
   <section class="toolbar vacancy-toolbar">
     ${renderVacancyWorkflowTabs(filtered)}
   </section>
@@ -1438,7 +1517,7 @@ function candidates(list) {
     const paged = paginate(rows, 'screening');
 
     return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add application</button></div></div>
-    ${renderFilterPanel('screening', { title: 'CV screening view', department: true, role: true, source: true, screeningStatus: true })}
+    ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, role: true, source: true, screeningStatus: true })}
     <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
       <option ${item.screening_status === 'Shortlisted' ? 'selected' : ''}>Shortlisted</option>
@@ -1475,7 +1554,7 @@ function candidates(list) {
     </div>`;
 
     return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${pipelineCandidates.length} active candidates in pipeline</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add Candidate</button></div></div>
-    ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', department: true, role: true, source: true })}
+    ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, role: true, source: true })}
     ${tabsHtml}
     <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
     <td>
@@ -1950,7 +2029,7 @@ function reports() {
     </button>
   </div>
 
-  ${renderFilterPanel('reports', { title: 'Filter Report View', department: true, source: true, status: true })}
+  ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: commonDateOptions, department: true, source: true, status: true })}
 
   ${activeReportTab === 'vacancy' ? `
     <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -2347,12 +2426,33 @@ function bindEvents() {
       }, 150);
     });
   }
-  document.querySelectorAll('.filter-control').forEach(control => control.onchange = event => {
-    const panel = event.target.closest('[data-filter-view]');
-    if (!panel) return;
-    filters[panel.dataset.filterView][event.target.dataset.filterKey] = event.target.value;
-    if (paginationState[panel.dataset.filterView]) paginationState[panel.dataset.filterView].page = 1;
-    render();
+  document.querySelectorAll('.filter-control').forEach(control => {
+    const handleFilterChange = event => {
+      const panel = event.target.closest('[data-filter-view]');
+      if (!panel) return;
+      const val = event.target.value;
+      if (filters[panel.dataset.filterView][event.target.dataset.filterKey] === val) return;
+      if (event.target.type === 'date' && val && !/^\d{4}-\d{2}-\d{2}$/.test(val)) return;
+      filters[panel.dataset.filterView][event.target.dataset.filterKey] = val;
+      if (paginationState[panel.dataset.filterView]) paginationState[panel.dataset.filterView].page = 1;
+      render();
+    };
+    control.onchange = handleFilterChange;
+    if (control.type === 'date') {
+      control.oninput = handleFilterChange;
+    }
+  });
+  document.querySelectorAll('[data-date-preset]').forEach(button => {
+    button.onclick = () => {
+      const viewKey = button.dataset.datePresetView;
+      const preset = button.dataset.datePreset;
+      const range = getDatePresetRange(preset);
+      if (!range || !filters[viewKey]) return;
+      filters[viewKey].from = range.from;
+      filters[viewKey].to = range.to;
+      if (paginationState[viewKey]) paginationState[viewKey].page = 1;
+      render();
+    };
   });
   document.querySelectorAll('.filter-toggle').forEach(button => button.onclick = () => {
     const expanded = button.getAttribute('aria-expanded') !== 'true';
