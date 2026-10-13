@@ -16,7 +16,7 @@ const priorities = ["Urgent","High","Medium","Low"];
 const experiences = ["Fresher (0-2 years)",">2 Years",">3 Years",">5 Years",">10 Years"];
 const salaries = ["10,000-15,000","15,000-20,000","20,000-25,000","25,000-30,000","30,000-40,000","40,000-50000","50,000 - 75,000","75,000 - 1,00,000","1,00,000 - 2,00,000","2,00,000 & Above"];
 const managers = ["Prateek Sir","Ayushi Mam","Divyansh Sir","Vishnu Sir","Ravi Sir"];
-const stages = ["Application Received (New)","CV Screened & Shortlisted","Interview Scheduled","Interview Completed (Under Evaluation)","Final Selection (HOD Approval)","Offer Released","Offer Accepted (Pre-Onboarding)","Candidate Joined (Closed - Won)","Rejected","Dropped / Ghosted","On Hold"]
+const stages = ["Application Received (New)","CV Screened & Shortlisted","Telephonic Round","Interview Scheduled","Interview Completed (Under Evaluation)","Final Selection (HOD Approval)","Offer Released","Offer Accepted (Pre-Onboarding)","Candidate Joined (Closed - Won)","Rejected","Dropped / Ghosted","On Hold"]
 const vacancyStages = ["Manpower Requirement Raised","Requirement Review","Vacancy Published / Sourcing Started","Candidate Pipeline Active","Final Candidate Selected","Offer Released","Offer Accepted","Candidate Joined","Vacancy Closed"];
 const vacancyStatuses = ['Open', 'On-Hold', 'Cancelled', 'Closed'];
 const vacancyStageLabels = {
@@ -44,6 +44,7 @@ const vacancyWorkflow = {
 const candidateWorkflow = {
   'Application Received (New)': { owner: 'HR Recruiter', output: 'Candidate record created', tat: 7 },
   'CV Screened & Shortlisted': { owner: 'HR Recruiter', output: 'Eligibility decision and screening notes', tat: 1 },
+  'Telephonic Round': { owner: 'HR Recruiter', output: 'Telephonic screening notes and feedback', tat: 1 },
   'Interview Scheduled': { owner: 'HR', output: 'Interview date and interviewer confirmed', tat: 1 },
   'Interview Completed (Under Evaluation)': { owner: 'HOD / Interviewer', output: 'Rating and evaluation remarks', tat: 3 },
   'Final Selection (HOD Approval)': { owner: 'Management', output: 'Final approval', tat: 3 },
@@ -233,7 +234,7 @@ function initApp() {
 }
 
 let data = { vacancies: [], candidates: [] };
-const legacyStageMap = { 'Manpower Requirement': 'Application Received (New)', 'Manpower Review': 'CV Screened & Shortlisted', 'Publish Vacancy': 'Application Received (New)', 'CV Screening': 'Application Received (New)', 'Candidate Shortlist': 'CV Screened & Shortlisted', 'Telephonic Screening': 'Interview Scheduled', 'Technical Assessment / Test': 'Interview Completed (Under Evaluation)', 'HR Interview Completed': 'Interview Completed (Under Evaluation)', 'Final Management Interview': 'Final Selection (HOD Approval)', 'Reference Check / Document Check': 'Final Selection (HOD Approval)', 'Selected - Job Offer Released': 'Offer Released', 'Offer Accepted — Joining Awaited': 'Offer Accepted (Pre-Onboarding)', 'Joined / Rejected / Dropped / On Hold': 'Candidate Joined (Closed - Won)' };
+const legacyStageMap = { 'Manpower Requirement': 'Application Received (New)', 'Manpower Review': 'CV Screened & Shortlisted', 'Publish Vacancy': 'Application Received (New)', 'CV Screening': 'Application Received (New)', 'Candidate Shortlist': 'CV Screened & Shortlisted', 'Telephonic Screening': 'Telephonic Round', 'Telephonic Round': 'Telephonic Round', 'Technical Assessment / Test': 'Interview Completed (Under Evaluation)', 'HR Interview Completed': 'Interview Completed (Under Evaluation)', 'Final Management Interview': 'Final Selection (HOD Approval)', 'Reference Check / Document Check': 'Final Selection (HOD Approval)', 'Selected - Job Offer Released': 'Offer Released', 'Offer Accepted — Joining Awaited': 'Offer Accepted (Pre-Onboarding)', 'Joined / Rejected / Dropped / On Hold': 'Candidate Joined (Closed - Won)' };
 const nowIso = () => new Date().toISOString();
 const toIsoDateTime = value => {
   if (!value) return '';
@@ -1380,7 +1381,7 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
         <button class="text-button" data-view="Candidates">View all →</button>
       </div>
       <div class="pipeline-bars">
-        ${stages.slice(1, 8).map(stage => `<div class="bar-row"><span>${stage}</span><div class="bar-track"><div class="bar-fill ${stageClass(stage)}" style="width:${Math.min(100, Math.max(8, countStage(stage, candidateList) * 14))}%"></div></div><strong>${countStage(stage, candidateList)}</strong></div>`).join('')}
+        ${stages.filter(s => !['Application Received (New)', 'Rejected', 'Dropped / Ghosted', 'On Hold'].includes(s)).map(stage => `<div class="bar-row"><span>${stage}</span><div class="bar-track"><div class="bar-fill ${stageClass(stage)}" style="width:${Math.min(100, Math.max(8, countStage(stage, candidateList) * 14))}%"></div></div><strong>${countStage(stage, candidateList)}</strong></div>`).join('')}
       </div>
     </section>
     <section class="panel urgent">
@@ -1582,18 +1583,26 @@ function candidates(list) {
 function renderActionButtons(candidate) {
   const nextStepMap = {
     'Application Received (New)': { stage: 'CV Screened & Shortlisted', label: 'Move to Shortlisted' },
-    'CV Screened & Shortlisted': { stage: 'Interview Scheduled', label: 'Move to Schedule Interview' },
+    'CV Screened & Shortlisted': { stage: 'Telephonic Round', label: 'Move to Telephonic Round' },
+    'Telephonic Round': { stage: 'Interview Scheduled', label: 'Move to Schedule Interview' },
     'Interview Scheduled': { stage: 'Interview Completed (Under Evaluation)', label: 'Move to Interview Completed' },
     'Interview Completed (Under Evaluation)': { stage: 'Final Selection (HOD Approval)', label: 'Move to Final Selection' },
     'Final Selection (HOD Approval)': { stage: 'Offer Released', label: 'Move to Release Offer' },
     'Offer Released': { stage: 'Offer Accepted (Pre-Onboarding)', label: 'Move to Offer Accepted' },
     'Offer Accepted (Pre-Onboarding)': { stage: 'Candidate Joined (Closed - Won)', label: 'Move to Candidate Joined' },
-    'On Hold': { stage: 'Interview Scheduled', label: 'Resume to Interview' },
+    'On Hold': { stage: 'Telephonic Round', label: 'Resume to Telephonic' },
     'Dropped / Ghosted': { stage: 'CV Screened & Shortlisted', label: 'Reactivate Candidate' },
     'Rejected': { stage: 'CV Screened & Shortlisted', label: 'Reconsider Candidate' }
   };
 
-  const nextStep = nextStepMap[candidate.stage];
+  let nextStep = nextStepMap[candidate.stage];
+  if (candidate.stage === 'On Hold') {
+    const prior = (candidate.stage_history || []).slice().reverse().find(h => h.stage && h.stage !== 'On Hold');
+    if (prior && prior.stage && nextStepMap[prior.stage]) {
+      const shortStageName = prior.stage.length > 20 ? prior.stage.slice(0, 18) + '…' : prior.stage;
+      nextStep = { stage: prior.stage, label: `Resume to ${shortStageName}` };
+    }
+  }
   let html = `<div class="candidate-actions">`;
 
   if (candidate.stage === 'Candidate Joined (Closed - Won)') {
@@ -1625,6 +1634,8 @@ function renderActionButtons(candidate) {
 
 
 let activeReportTab = 'daily';
+let expandedReportRoles = new Set();
+let reportTrackingSearch = '';
 
 function isDateInTabPeriod(dateValue, tab) {
   if (tab === 'vacancy' || tab === 'closed_jobs') return true;
@@ -1681,6 +1692,7 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
         role: roleName,
         department: v.department || 'Operations',
         vacanciesCount: 1,
+        vacancyIds: v.id ? [v.id] : [],
         formsFilled: 0,
         shortlisted: 0,
         telephonic: 0,
@@ -1689,21 +1701,33 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
         offers: 0,
         vacancyFilled: 0,
         latestUpdate: null,
-        latestTimestamp: 0
+        latestTimestamp: 0,
+        candidates: []
       });
     } else {
-      roleMap.get(roleName).vacanciesCount++;
+      const entry = roleMap.get(roleName);
+      entry.vacanciesCount++;
+      if (v.id && !entry.vacancyIds.includes(v.id)) {
+        entry.vacancyIds.push(v.id);
+      }
     }
   });
 
   // 2. Seed unique roles from candidates
   filteredCandidates.forEach(c => {
-    const roleName = (c.role || 'General Position').trim();
+    let roleName = (c.role || 'General Position').trim();
+    if (c.requirement_id) {
+      const matchedV = filteredVacancies.find(v => v.id === c.requirement_id) || (typeof data !== 'undefined' && data.vacancies ? data.vacancies.find(v => v.id === c.requirement_id) : null);
+      if (matchedV && matchedV.title) {
+        roleName = matchedV.title.trim();
+      }
+    }
     if (!roleMap.has(roleName)) {
       roleMap.set(roleName, {
         role: roleName,
-        department: 'Operations',
+        department: c.department || 'Operations',
         vacanciesCount: 0,
+        vacancyIds: c.requirement_id ? [c.requirement_id] : [],
         formsFilled: 0,
         shortlisted: 0,
         telephonic: 0,
@@ -1712,16 +1736,30 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
         offers: 0,
         vacancyFilled: 0,
         latestUpdate: null,
-        latestTimestamp: 0
+        latestTimestamp: 0,
+        candidates: []
       });
+    } else if (c.requirement_id) {
+      const entry = roleMap.get(roleName);
+      if (entry.vacancyIds && !entry.vacancyIds.includes(c.requirement_id)) {
+        entry.vacancyIds.push(c.requirement_id);
+      }
     }
   });
 
   // 3. Compute metric counts per role
   filteredCandidates.forEach(c => {
-    const roleName = (c.role || 'General Position').trim();
+    let roleName = (c.role || 'General Position').trim();
+    if (c.requirement_id) {
+      const matchedV = filteredVacancies.find(v => v.id === c.requirement_id) || (typeof data !== 'undefined' && data.vacancies ? data.vacancies.find(v => v.id === c.requirement_id) : null);
+      if (matchedV && matchedV.title) {
+        roleName = matchedV.title.trim();
+      }
+    }
     const entry = roleMap.get(roleName);
     if (!entry) return;
+
+    entry.candidates.push(c);
 
     // Track latest candidate update timestamp for this role
     const updateTimeStr = c.stage_updated_at || c.updatedAt || c.timestamp || c.createdAt;
@@ -1744,22 +1782,41 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
     }
 
     // No. of Telephonic Interview
-    if (candidateMatchesStageInPeriod(c, ['Interview Scheduled'], reportTab)) {
+    const telephonicFunnelStages = [
+      'Telephonic Round', 'Telephonic Interview', 'Telephonic Screening',
+      'Interview Scheduled', 'Interview Completed (Under Evaluation)',
+      'Final Selection (HOD Approval)', 'Offer Released',
+      'Offer Accepted (Pre-Onboarding)', 'Candidate Joined (Closed - Won)'
+    ];
+    if (candidateMatchesStageInPeriod(c, telephonicFunnelStages, reportTab)) {
       entry.telephonic++;
     }
 
     // No. of HR Interview
-    if (candidateMatchesStageInPeriod(c, ['Interview Completed (Under Evaluation)'], reportTab)) {
+    const hrFunnelStages = [
+      'Interview Scheduled', 'Interview Completed (Under Evaluation)',
+      'Final Selection (HOD Approval)', 'Offer Released',
+      'Offer Accepted (Pre-Onboarding)', 'Candidate Joined (Closed - Won)'
+    ];
+    if (candidateMatchesStageInPeriod(c, hrFunnelStages, reportTab)) {
       entry.hrInterview++;
     }
 
     // No. of Final Interview
-    if (candidateMatchesStageInPeriod(c, ['Final Selection (HOD Approval)'], reportTab)) {
+    const finalFunnelStages = [
+      'Final Selection (HOD Approval)', 'Offer Released',
+      'Offer Accepted (Pre-Onboarding)', 'Candidate Joined (Closed - Won)'
+    ];
+    if (candidateMatchesStageInPeriod(c, finalFunnelStages, reportTab)) {
       entry.finalInterview++;
     }
 
     // No. of Offers
-    if (candidateMatchesStageInPeriod(c, ['Offer Released', 'Offer Accepted (Pre-Onboarding)'], reportTab)) {
+    const offerFunnelStages = [
+      'Offer Released', 'Offer Accepted (Pre-Onboarding)',
+      'Candidate Joined (Closed - Won)'
+    ];
+    if (candidateMatchesStageInPeriod(c, offerFunnelStages, reportTab)) {
       entry.offers++;
     }
 
@@ -1773,6 +1830,14 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
     const sumA = a.formsFilled + a.shortlisted + a.telephonic + a.hrInterview + a.finalInterview + a.offers + a.vacancyFilled;
     const sumB = b.formsFilled + b.shortlisted + b.telephonic + b.hrInterview + b.finalInterview + b.offers + b.vacancyFilled;
     return sumB - sumA || a.role.localeCompare(b.role);
+  });
+
+  rows.forEach(r => {
+    r.candidates.sort((a, b) => {
+      const ta = parseDateValue(a.stage_updated_at || a.updatedAt || a.timestamp || a.createdAt)?.getTime() || 0;
+      const tb = parseDateValue(b.stage_updated_at || b.updatedAt || b.timestamp || b.createdAt)?.getTime() || 0;
+      return tb - ta;
+    });
   });
 
   const totals = {
@@ -2003,6 +2068,118 @@ function exportReportToCsv(tabType, rows, totals) {
   URL.revokeObjectURL(url);
 }
 
+function getCandidateStageBadge(stage) {
+  const s = String(stage || '').toLowerCase();
+  if (s.includes('joined')) {
+    return { bg: '#dcfce7', color: '#15803d', label: '🎉 Joined' };
+  }
+  if (s.includes('offer')) {
+    return { bg: '#f3e8ff', color: '#7e22ce', label: '💼 Offer' };
+  }
+  if (s.includes('telephonic')) {
+    return { bg: '#e0f2fe', color: '#0369a1', label: '📞 Telephonic' };
+  }
+  if (s.includes('interview') || s.includes('final selection')) {
+    return { bg: '#fef3c7', color: '#b45309', label: '🎙️ Interview' };
+  }
+  if (s.includes('shortlist') || s.includes('screened')) {
+    return { bg: '#eff6ff', color: '#1d4ed8', label: '⭐ Shortlisted' };
+  }
+  if (s.includes('reject')) {
+    return { bg: '#fee2e2', color: '#b91c1c', label: '✕ Rejected' };
+  }
+  if (s.includes('hold') || s.includes('dropped') || s.includes('ghosted')) {
+    return { bg: '#f1f5f9', color: '#64748b', label: '⏸️ Hold' };
+  }
+  return { bg: '#f1f5f9', color: '#334155', label: '📝 New' };
+}
+
+function exportCandidateTrackingToCsv(tabType, rows) {
+  const tabTitles = {
+    daily: 'Daily_Candidate_Tracking',
+    weekly: 'Weekly_Candidate_Tracking',
+    monthly: 'Monthly_Candidate_Tracking',
+    vacancy: 'Vacancy_Candidate_Tracking'
+  };
+
+  const headers = [
+    'Role / Vacancy',
+    'Department',
+    'Candidate ID',
+    'Candidate Name',
+    'Phone',
+    'Email',
+    'Source',
+    'Current Stage',
+    'Screening Status',
+    'Applied Timestamp',
+    'Shortlisted Timestamp',
+    'Telephonic Timestamp',
+    'Interview Details',
+    'Offer / Joined Status',
+    'Latest Step Timestamp'
+  ];
+
+  const csvLines = [
+    headers.map(h => `"${h.replace(/"/g, '""')}"`).join(',')
+  ];
+
+  rows.forEach(r => {
+    (r.candidates || []).forEach(c => {
+      const interviewInfo = c.interview_date 
+        ? `${c.interview_date} ${c.interview_time || ''} (${c.interviewer || 'Interview'})`
+        : (c.stage_timestamps?.['Interview Scheduled']?.entered_at ? formatDateTime(c.stage_timestamps['Interview Scheduled'].entered_at) : '-');
+      
+      const offerOrJoined = c.joining_date 
+        ? `Joined: ${formatDateTime(c.joining_date)}`
+        : (c.offer_date 
+          ? `Offered: ${formatDateTime(c.offer_date)}`
+          : (c.stage_timestamps?.['Candidate Joined (Closed - Won)']?.entered_at
+            ? `Joined: ${formatDateTime(c.stage_timestamps['Candidate Joined (Closed - Won)'].entered_at)}`
+            : (c.stage_timestamps?.['Offer Released']?.entered_at 
+              ? `Offered: ${formatDateTime(c.stage_timestamps['Offer Released'].entered_at)}`
+              : '-')));
+
+      const shortlistedTime = c.stage_timestamps?.['CV Screened & Shortlisted']?.entered_at
+        ? formatDateTime(c.stage_timestamps['CV Screened & Shortlisted'].entered_at)
+        : (c.screening_status === 'Shortlisted' ? formatDateTime(c.stage_updated_at || c.timestamp) : '-');
+
+      const telephonicTime = c.stage_timestamps?.['Telephonic Round']?.entered_at
+        ? formatDateTime(c.stage_timestamps['Telephonic Round'].entered_at)
+        : (c.stage === 'Telephonic Round' ? formatDateTime(c.stage_updated_at || c.timestamp) : '-');
+
+      csvLines.push([
+        `"${(r.role || '').replace(/"/g, '""')}"`,
+        `"${(r.department || '').replace(/"/g, '""')}"`,
+        `"${(c.id || '').replace(/"/g, '""')}"`,
+        `"${(c.name || '').replace(/"/g, '""')}"`,
+        `"${(c.phone || '').replace(/"/g, '""')}"`,
+        `"${(c.email || '').replace(/"/g, '""')}"`,
+        `"${(c.source || '').replace(/"/g, '""')}"`,
+        `"${(c.stage || '').replace(/"/g, '""')}"`,
+        `"${(c.screening_status || '').replace(/"/g, '""')}"`,
+        `"${formatDateTime(c.timestamp || c.createdAt)}"`,
+        `"${shortlistedTime}"`,
+        `"${telephonicTime}"`,
+        `"${interviewInfo.replace(/"/g, '""')}"`,
+        `"${offerOrJoined.replace(/"/g, '""')}"`,
+        `"${formatDateTime(c.stage_updated_at || c.updatedAt || c.timestamp)}"`
+      ].join(','));
+    });
+  });
+
+  const csvContent = '\uFEFF' + csvLines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Recruitment_${tabTitles[tabType] || 'Candidate_Tracking'}_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function reports() {
   const isCustomDate = Boolean(filters.reports && (filters.reports.from || filters.reports.to));
   let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
@@ -2055,10 +2232,15 @@ function reports() {
       <p>${reportSubtitle}</p>
       <div style="font-size:11px; color:var(--muted); margin-top:4px;">🕒 Live Report Timestamp: <strong>${formatDateTime(new Date())}</strong></div>
     </div>
-    <button class="secondary" data-action="export-report-csv" style="display:flex; align-items:center; gap:8px;">
-      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-      Download Report (CSV) ↓
-    </button>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button class="secondary" data-action="export-candidate-tracking-csv" style="display:flex; align-items:center; gap:8px; font-weight:700; color:#1e40af; border-color:#bfdbfe; background:#eff6ff;" title="Download complete candidate-by-candidate audit trail with all timestamps">
+        <span>👥</span> Export Candidate Tracking (CSV) ↓
+      </button>
+      <button class="secondary" data-action="export-report-csv" style="display:flex; align-items:center; gap:8px;">
+        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Download Summary (CSV) ↓
+      </button>
+    </div>
   </div>
 
   <div class="report-tabs">
@@ -2224,10 +2406,15 @@ function reports() {
         <strong style="color:#2563eb;">${totals.shortlisted}</strong>
         <small>${totals.formsFilled ? Math.round((totals.shortlisted / totals.formsFilled) * 100) : 0}% screening rate</small>
       </div>
-      <div class="report-card" title="Interviews conducted across all interview rounds">
+      <div class="report-card" title="Candidates reached or cleared Telephonic Round">
+        <span>📞 Telephonic Round</span>
+        <strong style="color:#0284c7;">${totals.telephonic}</strong>
+        <small>${totals.shortlisted ? Math.round((totals.telephonic / totals.shortlisted) * 100) : 0}% of shortlisted</small>
+      </div>
+      <div class="report-card" title="Interviews conducted across HR and Final interview rounds">
         <span>🎙️ Interviews</span>
-        <strong style="color:#d97706;">${totals.telephonic + totals.hrInterview + totals.finalInterview}</strong>
-        <small>Tel: ${totals.telephonic} · HR: ${totals.hrInterview} · Fin: ${totals.finalInterview}</small>
+        <strong style="color:#d97706;">${totals.hrInterview + totals.finalInterview}</strong>
+        <small>HR: ${totals.hrInterview} · Fin: ${totals.finalInterview}</small>
       </div>
       <div class="report-card" title="Job offers released">
         <span>💼 Offers Released</span>
@@ -2242,44 +2429,197 @@ function reports() {
     </div>
 
     <section class="panel report-table">
-      <div class="panel-head">
+      <div class="panel-head" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
         <div>
-          <span class="section-kicker">FUNNEL METRICS</span>
-          <h3>List of (Total & Filtered Role Wise) — ${rows.length} Roles</h3>
+          <span class="section-kicker">FUNNEL METRICS & CANDIDATE TRACKING</span>
+          <h3 style="margin:0;">List of (Total & Filtered Role Wise) — ${rows.length} Roles (${totals.formsFilled} Candidates)</h3>
+          <small style="color:var(--muted); font-size:11px;">Click <strong>Track Candidates ▾</strong> on any vacancy/role to track each individual candidate with timestamps</small>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="text" id="report-candidate-search" placeholder="🔍 Search candidate in roles..." value="${escapeHtml(reportTrackingSearch)}" style="padding:6px 12px; border:1px solid var(--line); border-radius:6px; font-size:11px; width:210px; background:#fff; color:var(--ink);">
+          <button type="button" class="secondary" data-action="expand-all-tracking" style="padding:6px 12px; font-size:11px; font-weight:700;">
+            ▾ Expand All
+          </button>
+          <button type="button" class="secondary" data-action="collapse-all-tracking" style="padding:6px 12px; font-size:11px; font-weight:700;">
+            ▴ Collapse All
+          </button>
         </div>
       </div>
       <div style="overflow-x:auto;">
         <table class="report-summary-table" style="width:100%; border-collapse:collapse;">
           <thead>
             <tr style="background:#f8faf9; border-bottom:1px solid var(--line);">
-              <th style="text-align:left; min-width:200px;">List of (Total & Filtered Role Wise)</th>
-              <th style="text-align:center; min-width:140px;">No. of Candidates Reached / Forms Filled</th>
-              <th style="text-align:center; min-width:130px;">No. of Shortlisted Candidates</th>
-              <th style="text-align:center; min-width:130px;">No. of Telephonic Interview</th>
-              <th style="text-align:center; min-width:110px;">No. of HR Interview</th>
-              <th style="text-align:center; min-width:120px;">No. of Final Interview</th>
-              <th style="text-align:center; min-width:100px;">No. of Offers</th>
-              <th style="text-align:center; min-width:120px;">No. of Vacancy Filled</th>
-              <th style="text-align:center; min-width:160px;">Latest Step / Activity Timestamp</th>
+              <th style="text-align:left; min-width:230px;">Vacancy / Role & Tracking</th>
+              <th style="text-align:center; min-width:130px;">Candidates Reached</th>
+              <th style="text-align:center; min-width:120px;">Shortlisted</th>
+              <th style="text-align:center; min-width:120px;">Telephonic</th>
+              <th style="text-align:center; min-width:110px;">HR Round</th>
+              <th style="text-align:center; min-width:110px;">Final Round</th>
+              <th style="text-align:center; min-width:100px;">Offers</th>
+              <th style="text-align:center; min-width:110px;">Vacancies Filled</th>
+              <th style="text-align:center; min-width:160px;">Latest Step Activity</th>
             </tr>
           </thead>
           <tbody>
-            ${rows.map(r => `
-              <tr>
-                <td>
-                  <strong>${escapeHtml(r.role)}</strong>
-                  ${r.department ? `<br><small style="color:var(--muted); font-size:11px;">${escapeHtml(r.department)}</small>` : ''}
-                </td>
-                <td style="text-align:center; font-weight:600;">${r.formsFilled}</td>
-                <td style="text-align:center; font-weight:600; color:${r.shortlisted > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.shortlisted}</td>
-                <td style="text-align:center; font-weight:600; color:${r.telephonic > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.telephonic}</td>
-                <td style="text-align:center; font-weight:600; color:${r.hrInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.hrInterview}</td>
-                <td style="text-align:center; font-weight:600; color:${r.finalInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.finalInterview}</td>
-                <td style="text-align:center; font-weight:600; color:${r.offers > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.offers}</td>
-                <td style="text-align:center; font-weight:700; color:${r.vacancyFilled > 0 ? 'var(--green)' : 'var(--muted)'};">${r.vacancyFilled}</td>
-                <td style="text-align:center; font-size:11px; color:#334155; white-space:nowrap;">${r.latestUpdate ? `🕒 <strong>${formatDateTime(r.latestUpdate)}</strong>` : '<span style="color:var(--muted);">-</span>'}</td>
-              </tr>
-            `).join('')}
+            ${rows.map(r => {
+              const searchLower = (reportTrackingSearch || '').trim().toLowerCase();
+              const hasMatchingCandidate = searchLower.length > 0 && r.candidates.some(c => (c.name || '').toLowerCase().includes(searchLower) || (c.id || '').toLowerCase().includes(searchLower) || (c.phone || '').includes(searchLower));
+              const isExpanded = expandedReportRoles.has(r.role) || hasMatchingCandidate;
+              const displayCandidates = searchLower.length > 0
+                ? r.candidates.filter(c => (c.name || '').toLowerCase().includes(searchLower) || (c.id || '').toLowerCase().includes(searchLower) || (c.phone || '').includes(searchLower) || (c.stage || '').toLowerCase().includes(searchLower))
+                : r.candidates;
+
+              return `
+                <tr class="report-role-row ${isExpanded ? 'expanded' : ''}">
+                  <td>
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                      <div>
+                        <strong>${escapeHtml(r.role)}</strong>
+                        ${r.vacancyIds && r.vacancyIds.length ? `<span class="vacancy-code-badge" style="margin-left:6px; font-size:10px;">${escapeHtml(r.vacancyIds.join(', '))}</span>` : ''}
+                        ${r.department ? `<br><small style="color:var(--muted); font-size:11px;">${escapeHtml(r.department)}</small>` : ''}
+                      </div>
+                      <button type="button" class="track-role-btn ${isExpanded ? 'active' : ''}" data-action="toggle-role-tracking" data-role="${escapeHtml(r.role)}" title="Track all candidates for ${escapeHtml(r.role)} with timestamps">
+                        <span>👥 ${r.candidates.length}</span> ${isExpanded ? '▴ Hide' : '▾ Track'}
+                      </button>
+                    </div>
+                  </td>
+                  <td style="text-align:center; font-weight:600;">${r.formsFilled}</td>
+                  <td style="text-align:center; font-weight:600; color:${r.shortlisted > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.shortlisted}</td>
+                  <td style="text-align:center; font-weight:600; color:${r.telephonic > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.telephonic}</td>
+                  <td style="text-align:center; font-weight:600; color:${r.hrInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.hrInterview}</td>
+                  <td style="text-align:center; font-weight:600; color:${r.finalInterview > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.finalInterview}</td>
+                  <td style="text-align:center; font-weight:600; color:${r.offers > 0 ? 'var(--ink)' : 'var(--muted)'};">${r.offers}</td>
+                  <td style="text-align:center; font-weight:700; color:${r.vacancyFilled > 0 ? 'var(--green)' : 'var(--muted)'};">${r.vacancyFilled}</td>
+                  <td style="text-align:center; font-size:11px; color:#334155; white-space:nowrap;">${r.latestUpdate ? `🕒 <strong>${formatDateTime(r.latestUpdate)}</strong>` : '<span style="color:var(--muted);">-</span>'}</td>
+                </tr>
+                <tr class="tracking-drawer-row ${isExpanded ? '' : 'hidden'}" id="drawer-${escapeHtml(r.role).replace(/[^a-zA-Z0-9_-]/g, '_')}">
+                  <td colspan="9" style="padding:0; background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+                    <div style="padding:14px 18px;">
+                      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                        <div style="display:flex; align-items:center; gap:8px;">
+                          <span style="font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:#1e293b; background:#e2e8f0; padding:3px 8px; border-radius:4px;">🎯 ${escapeHtml(r.role)}</span>
+                          <span style="font-size:12px; font-weight:600; color:#475569;">Candidate Tracking & Step Timestamps (${displayCandidates.length}${displayCandidates.length !== r.candidates.length ? ` of ${r.candidates.length}` : ''} candidates)</span>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:6px; font-size:11px; flex-wrap:wrap;">
+                          <span class="step-summary-pill blue">⭐ Shortlisted: ${r.shortlisted}</span>
+                          <span class="step-summary-pill cyan">📞 Telephonic: ${r.telephonic}</span>
+                          <span class="step-summary-pill amber">🎙️ Interview: ${r.hrInterview + r.finalInterview}</span>
+                          <span class="step-summary-pill purple">💼 Offers: ${r.offers}</span>
+                          <span class="step-summary-pill green">🎉 Joined: ${r.vacancyFilled}</span>
+                        </div>
+                      </div>
+                      ${displayCandidates.length === 0 ? `
+                        <div style="padding:22px; text-align:center; color:#94a3b8; font-size:12px; background:#fff; border:1px dashed #cbd5e1; border-radius:6px;">
+                          No candidates found matching filter criteria for this vacancy.
+                        </div>
+                      ` : `
+                        <div style="overflow-x:auto; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+                          <table class="report-candidate-table" style="width:100%; border-collapse:collapse; min-width:960px;">
+                            <thead>
+                              <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">
+                                <th style="text-align:left; padding:8px 12px; min-width:180px;">Candidate & Contact</th>
+                                <th style="text-align:center; padding:8px 10px; min-width:130px;">Current Stage</th>
+                                <th style="text-align:center; padding:8px 10px; min-width:90px;">Screening</th>
+                                <th style="text-align:left; padding:8px 10px; min-width:130px;">📅 Applied Time</th>
+                                <th style="text-align:left; padding:8px 10px; min-width:140px;">⭐ Shortlisted Time</th>
+                                <th style="text-align:left; padding:8px 10px; min-width:140px;">📞 Telephonic Time</th>
+                                <th style="text-align:left; padding:8px 10px; min-width:150px;">🎙️ Interview Time</th>
+                                <th style="text-align:left; padding:8px 10px; min-width:140px;">💼 Offer / Joined</th>
+                                <th style="text-align:left; padding:8px 12px; min-width:150px;">🕒 Latest Update Time</th>
+                                <th style="text-align:center; padding:8px 10px; min-width:100px;">Audit Log</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${displayCandidates.map(c => {
+                                const stageBadge = getCandidateStageBadge(c.stage || '');
+                                const appliedTime = c.timestamp || c.createdAt;
+                                const shortlistedTime = c.stage_timestamps?.['CV Screened & Shortlisted']?.entered_at 
+                                  || (c.screening_status === 'Shortlisted' ? (c.stage_updated_at || c.timestamp) : null)
+                                  || (c.stage_history || []).find(h => h.stage === 'CV Screened & Shortlisted' || h.to_stage === 'CV Screened & Shortlisted')?.entered_at;
+                                const telephonicTime = c.stage_timestamps?.['Telephonic Round']?.entered_at 
+                                  || (c.stage === 'Telephonic Round' ? (c.stage_updated_at || c.timestamp) : null)
+                                  || (c.stage_history || []).find(h => h.stage === 'Telephonic Round' || h.to_stage === 'Telephonic Round')?.entered_at;
+                                const interviewTime = c.interview_date 
+                                  ? `${c.interview_date} ${c.interview_time || ''}`
+                                  : (c.stage_timestamps?.['Interview Scheduled']?.entered_at 
+                                    || (c.stage_history || []).find(h => h.stage === 'Interview Scheduled' || h.to_stage === 'Interview Scheduled')?.entered_at);
+                                const offerTime = c.offer_date 
+                                  || c.stage_timestamps?.['Offer Released']?.entered_at 
+                                  || (c.stage_history || []).find(h => h.stage === 'Offer Released' || h.to_stage === 'Offer Released')?.entered_at;
+                                const joinedTime = c.joining_date 
+                                  || c.stage_timestamps?.['Candidate Joined (Closed - Won)']?.entered_at 
+                                  || (c.stage_history || []).find(h => h.stage === 'Candidate Joined (Closed - Won)' || h.to_stage === 'Candidate Joined (Closed - Won)')?.entered_at;
+
+                                return `
+                                  <tr style="border-bottom:1px solid #f1f5f9; font-size:11px;">
+                                    <td style="padding:8px 12px;">
+                                      <div style="display:flex; align-items:center; gap:8px;">
+                                        <span class="initials" style="width:26px; height:26px; font-size:10px; flex-shrink:0;">${(c.name || 'C').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}</span>
+                                        <div>
+                                          <button type="button" class="candidate-name-btn" data-action="view-candidate" data-id="${c.id}" style="padding:0; background:none; border:none; cursor:pointer; text-align:left;">
+                                            <strong style="color:#0f172a;">${escapeHtml(c.name)}</strong> ↗
+                                          </button>
+                                          <div style="font-size:10px; color:var(--muted); display:flex; gap:6px; align-items:center; margin-top:1px;">
+                                            <span>${escapeHtml(c.id)}</span>
+                                            ${c.requirement_id ? `<span class="vacancy-code-badge" style="font-size:9px; padding:1px 5px;">${escapeHtml(c.requirement_id)}</span>` : ''}
+                                            ${c.phone ? `<span>· 📞 <a href="tel:${escapeHtml(c.phone)}" style="color:inherit; text-decoration:none;">${escapeHtml(c.phone)}</a></span>` : ''}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td style="text-align:center; padding:8px 10px;">
+                                      <span style="font-size:10px; padding:3px 8px; border-radius:4px; font-weight:700; background:${stageBadge.bg}; color:${stageBadge.color}; white-space:nowrap; display:inline-block;">
+                                        ${stageBadge.label}
+                                      </span>
+                                    </td>
+                                    <td style="text-align:center; padding:8px 10px;">
+                                      <span class="status-badge ${c.screening_status === 'Shortlisted' ? 'green' : c.screening_status === 'Rejected' ? 'red' : 'yellow'}" style="font-size:10px; padding:2px 6px; border-radius:4px; font-weight:600; white-space:nowrap;">
+                                        ${escapeHtml(c.screening_status || 'Pending Review')}
+                                      </span>
+                                    </td>
+                                    <td style="padding:8px 10px; font-size:11px; color:#475569; white-space:nowrap;">
+                                      ${appliedTime ? formatDateTime(appliedTime) : '-'}
+                                    </td>
+                                    <td style="padding:8px 10px; font-size:11px; color:#1e293b; white-space:nowrap;">
+                                      ${shortlistedTime ? `⭐ <strong>${formatDateTime(shortlistedTime)}</strong>` : '<span style="color:var(--muted);">-</span>'}
+                                    </td>
+                                    <td style="padding:8px 10px; font-size:11px; color:#1e293b; white-space:nowrap;">
+                                      ${telephonicTime ? `📞 <strong>${formatDateTime(telephonicTime)}</strong>` : '<span style="color:var(--muted);">-</span>'}
+                                      ${c.contacted_date ? `<div style="font-size:9px; color:var(--muted); margin-top:2px;">Contacted: ${escapeHtml(c.contacted_date)}</div>` : ''}
+                                    </td>
+                                    <td style="padding:8px 10px; font-size:11px; color:#1e293b;">
+                                      ${c.interview_date 
+                                        ? `🎙️ <strong>${escapeHtml(c.interview_date)} ${escapeHtml(c.interview_time || '')}</strong><br><small style="color:var(--muted); font-size:10px;">${escapeHtml(c.interviewer || 'Interview')}</small>`
+                                        : (interviewTime ? `🎙️ <strong>${formatDateTime(interviewTime)}</strong>` : '<span style="color:var(--muted);">-</span>')}
+                                    </td>
+                                    <td style="padding:8px 10px; font-size:11px;">
+                                      ${joinedTime
+                                        ? `<span style="color:#16a34a; font-weight:700;">🎉 Joined: ${formatDateTime(joinedTime)}</span>`
+                                        : (offerTime
+                                          ? `<span style="color:#7e22ce; font-weight:700;">💼 Offered: ${formatDateTime(offerTime)}</span>${c.offered_ctc ? `<div style="font-size:10px; color:var(--muted);">CTC: ₹${Number(c.offered_ctc).toLocaleString('en-IN')}</div>` : ''}`
+                                          : '<span style="color:var(--muted);">-</span>')}
+                                    </td>
+                                    <td style="padding:8px 12px; font-size:11px; color:#0f172a; white-space:nowrap;">
+                                      🕒 <strong>${formatDateTime(c.stage_updated_at || c.updatedAt || c.timestamp)}</strong>
+                                      <div style="font-size:10px; color:#64748b; margin-top:2px;">${daysInStage(c)}d in stage</div>
+                                    </td>
+                                    <td style="text-align:center; padding:8px 10px;">
+                                      <button type="button" class="text-button open-step-history" data-type="candidate" data-id="${c.id}" style="padding:4px 8px; font-size:10px; font-weight:700; color:#2563eb; background:#eff6ff; border:1px solid #bfdbfe; border-radius:4px; cursor:pointer; white-space:nowrap;" title="View all stage transitions and exact time taken">
+                                        🕒 Steps Log →
+                                      </button>
+                                    </td>
+                                  </tr>
+                                `;
+                              }).join('')}
+                            </tbody>
+                          </table>
+                        </div>
+                      `}
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
             ${rows.length === 0 ? `<tr><td colspan="9" style="text-align:center; padding:40px; color:#9aa6a2;">No recruitment activity found for the selected timeframe.</td></tr>` : ''}
           </tbody>
           ${rows.length > 0 ? `
@@ -2633,6 +2973,57 @@ function bindEvents() {
       exportReportToCsv(activeReportTab, rows, totals);
     }
   });
+  document.querySelectorAll('[data-action="export-candidate-tracking-csv"]').forEach(button => button.onclick = () => {
+    let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
+    if (activeReportTab === 'vacancy' && !filters.reports.status) {
+      reportVacancies = reportVacancies.filter(v => v.status === 'Open');
+    }
+    const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
+    const { rows } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
+    exportCandidateTrackingToCsv(activeReportTab, rows);
+  });
+  document.querySelectorAll('[data-action="toggle-role-tracking"]').forEach(button => {
+    button.onclick = (e) => {
+      e.stopPropagation();
+      const role = button.dataset.role;
+      if (expandedReportRoles.has(role)) {
+        expandedReportRoles.delete(role);
+      } else {
+        expandedReportRoles.add(role);
+      }
+      render();
+    };
+  });
+  document.querySelectorAll('[data-action="expand-all-tracking"]').forEach(button => {
+    button.onclick = () => {
+      let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
+      if (activeReportTab === 'vacancy' && !filters.reports.status) {
+        reportVacancies = reportVacancies.filter(v => v.status === 'Open');
+      }
+      const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
+      const { rows } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
+      rows.forEach(r => expandedReportRoles.add(r.role));
+      render();
+    };
+  });
+  document.querySelectorAll('[data-action="collapse-all-tracking"]').forEach(button => {
+    button.onclick = () => {
+      expandedReportRoles.clear();
+      render();
+    };
+  });
+  const reportSearchInput = document.getElementById('report-candidate-search');
+  if (reportSearchInput) {
+    reportSearchInput.oninput = (e) => {
+      reportTrackingSearch = e.target.value;
+      render();
+      const nextInput = document.getElementById('report-candidate-search');
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+      }
+    };
+  }
   document.querySelectorAll('[data-dashboard-preset]').forEach(button => {
     button.onclick = () => {
       activeDashboardPreset = button.dataset.dashboardPreset;
@@ -3836,6 +4227,7 @@ function openBulkCandidateModal() {
           <select id="bulk-stage-select">
             <option value="Application Received (New)" selected>Application Received (New) - CV Screening</option>
             <option value="CV Screened & Shortlisted">CV Screened & Shortlisted - Active Pipeline</option>
+            <option value="Telephonic Round">Telephonic Round - Active Pipeline</option>
           </select>
         </label>
         <label>

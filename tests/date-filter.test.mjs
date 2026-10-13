@@ -239,4 +239,24 @@ test('date filtering and range logic in Recruitment FMS', async (t) => {
     assert.equal(totals.latestUpdate, '2026-10-13T09:15:00Z', 'Totals latestUpdate matches overall most recent candidate update');
     assert.ok(formatDateTime(salesRow.latestUpdate).includes('2026'), 'formatDateTime renders valid human readable timestamp');
   });
+
+  await t.test('computeReportMetrics accurately counts candidates in Telephonic Round in telephonic metric', () => {
+    const computeReportMetrics = vm.runInContext('computeReportMetrics', ctx);
+
+    const testCandidates = [
+      { id: 'C-10', role: 'Relationship Manager', timestamp: '2026-10-13T10:00:00Z', stage: 'Telephonic Round', screening_status: 'Shortlisted', stage_updated_at: '2026-10-13T10:30:00Z' },
+      { id: 'C-11', role: 'Relationship Manager', timestamp: '2026-10-13T11:00:00Z', stage: 'CV Screened & Shortlisted', screening_status: 'Shortlisted', stage_updated_at: '2026-10-13T11:30:00Z' }
+    ];
+    const testVacancies = [
+      { id: 'V-10', title: 'Relationship Manager', department: 'Sales', status: 'Open' }
+    ];
+
+    const { rows, totals } = computeReportMetrics('daily', testVacancies, testCandidates);
+    const rmRow = rows.find(r => r.role === 'Relationship Manager');
+    assert.ok(rmRow, 'Relationship Manager row found');
+    assert.equal(rmRow.telephonic, 1, 'Candidate in Telephonic Round is counted in telephonic metric');
+    assert.equal(rmRow.shortlisted, 2, 'Both candidates count in shortlisted');
+    assert.equal(totals.telephonic, 1, 'Totals telephonic count matches 1');
+  });
 });
+
