@@ -2513,7 +2513,7 @@ function reports() {
                           No candidates found matching filter criteria for this vacancy.
                         </div>
                       ` : `
-                        <div style="overflow-x:auto; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
+                        <div style="overflow-x:auto; min-height:120px; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 1px 3px rgba(0,0,0,0.03);">
                           <table class="report-candidate-table" style="width:100%; border-collapse:collapse; min-width:960px;">
                             <thead>
                               <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">
@@ -2552,17 +2552,46 @@ function reports() {
 
                                 return `
                                   <tr style="border-bottom:1px solid #f1f5f9; font-size:11px;">
-                                    <td style="padding:8px 12px;">
-                                      <div style="display:flex; align-items:center; gap:8px;">
+                                    <td style="padding:8px 12px; position:relative;">
+                                      <div class="candidate-cell-wrapper" style="display:flex; align-items:center; gap:8px;">
                                         <span class="initials" style="width:26px; height:26px; font-size:10px; flex-shrink:0;">${(c.name || 'C').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}</span>
-                                        <div>
-                                          <button type="button" class="candidate-name-btn" data-action="view-candidate" data-id="${c.id}" style="padding:0; background:none; border:none; cursor:pointer; text-align:left;">
-                                            <strong style="color:#0f172a;">${escapeHtml(c.name)}</strong> ↗
+                                        <div class="candidate-hover-trigger">
+                                          <button type="button" class="candidate-name-btn" data-action="view-candidate" data-id="${c.id}" style="padding:0; background:none; border:none; cursor:pointer; text-align:left; display:inline-flex; align-items:center; gap:4px;">
+                                            <strong style="color:#0f172a; font-size:12px;">${escapeHtml(c.name)}</strong>
+                                            <span style="color:#94a3b8; font-size:10px;" title="View full profile">↗</span>
                                           </button>
-                                          <div style="font-size:10px; color:var(--muted); display:flex; gap:6px; align-items:center; margin-top:1px;">
-                                            <span>${escapeHtml(c.id)}</span>
-                                            ${c.requirement_id ? `<span class="vacancy-code-badge" style="font-size:9px; padding:1px 5px;">${escapeHtml(c.requirement_id)}</span>` : ''}
-                                            ${c.phone ? `<span>· 📞 <a href="tel:${escapeHtml(c.phone)}" style="color:inherit; text-decoration:none;">${escapeHtml(c.phone)}</a></span>` : ''}
+                                          <div class="candidate-hover-card">
+                                            <div class="candidate-hover-header">
+                                              <span class="candidate-hover-name">${escapeHtml(c.name)}</span>
+                                              <span class="candidate-hover-req-badge">${escapeHtml(c.requirement_id || 'GENERAL')}</span>
+                                            </div>
+                                            <div class="candidate-hover-content">
+                                              <div class="candidate-hover-row">
+                                                <span class="candidate-hover-label">🆔 Candidate No:</span>
+                                                <span class="candidate-hover-val font-mono">${escapeHtml(c.id)}</span>
+                                              </div>
+                                              <div class="candidate-hover-row">
+                                                <span class="candidate-hover-label">📞 Phone:</span>
+                                                <span class="candidate-hover-val">
+                                                  ${c.phone ? `<a href="tel:${escapeHtml(c.phone)}" class="candidate-hover-phone-link" onclick="event.stopPropagation();">${escapeHtml(c.phone)}</a>` : '<span style="color:#64748b;">Not provided</span>'}
+                                                </span>
+                                              </div>
+                                              ${c.email ? `
+                                                <div class="candidate-hover-row">
+                                                  <span class="candidate-hover-label">✉️ Email:</span>
+                                                  <span class="candidate-hover-val" style="color:#cbd5e1;">${escapeHtml(c.email)}</span>
+                                                </div>
+                                              ` : ''}
+                                              ${c.experience ? `
+                                                <div class="candidate-hover-row">
+                                                  <span class="candidate-hover-label">💼 Exp:</span>
+                                                  <span class="candidate-hover-val" style="color:#cbd5e1;">${escapeHtml(c.experience)}</span>
+                                                </div>
+                                              ` : ''}
+                                            </div>
+                                            <div class="candidate-hover-hint">
+                                              Click name to view full profile ↗
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
@@ -3744,35 +3773,64 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
     if (!payload.updatedAt) {
       payload.updatedAt = candidate.updatedAt || new Date().toISOString();
     }
-    let response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (response.status === 409) {
+
+    let response;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      attempts++;
       try {
-        const freshRes = await fetch(`${API_BASE}/api/candidates/${candidate.id}`);
-        if (freshRes.ok) {
-          const freshData = await freshRes.json();
-          if (freshData.candidate?.updatedAt) {
-            payload.updatedAt = freshData.candidate.updatedAt;
-            response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
-              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
-            });
-          }
+        response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (response && response.status === 409) {
+          try {
+            const freshRes = await fetch(`${API_BASE}/api/candidates/${candidate.id}`);
+            if (freshRes && freshRes.ok) {
+              const freshData = await freshRes.json();
+              if (freshData?.candidate?.updatedAt) {
+                payload.updatedAt = freshData.candidate.updatedAt;
+                response = await fetch(`${API_BASE}/api/candidates/${candidate.id}/stage`, {
+                  method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                });
+              }
+            }
+          } catch {}
         }
-      } catch {}
+
+        if (response && (response.ok || !response.status || response.status < 500)) {
+          break;
+        }
+
+        if (attempts < maxAttempts && typeof setTimeout !== 'undefined') {
+          await new Promise(r => setTimeout(r, attempts * 400));
+        }
+      } catch (networkErr) {
+        if (attempts >= maxAttempts) throw networkErr;
+        if (typeof setTimeout !== 'undefined') {
+          await new Promise(r => setTimeout(r, attempts * 500));
+        }
+      }
     }
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || 'Could not save candidate stage');
+
+    const result = response ? await response.json() : {};
+    if (!response || !response.ok) throw new Error(result.error || 'Could not save candidate stage');
     Object.assign(candidate, normalizeCandidate(result.candidate));
     saved = true;
     if (nextStage === 'Candidate Joined (Closed - Won)') {
-      const closure = await fetch(`${API_BASE}/api/sync`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vacancies: data.vacancies.filter(v => v.id === candidate.requirement_id || v.title === candidate.role) })
-      });
-      if (!closure.ok) alert('Candidate stage saved, but vacancy closure could not be saved. Please refresh and close the vacancy.');
+      try {
+        const closure = await fetch(`${API_BASE}/api/sync`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vacancies: data.vacancies.filter(v => v.id === candidate.requirement_id || v.title === candidate.role) })
+        });
+        if (!closure.ok) alert('Candidate stage saved, but vacancy closure could not be saved. Please refresh and close the vacancy.');
+      } catch (closureErr) {
+        alert(`Candidate stage saved, but vacancy closure failed: ${closureErr.message}`);
+      }
     }
   } catch (error) {
     if (!saved) {
@@ -3781,7 +3839,11 @@ async function updateCandidateStage(candidate, nextStage, draft = candidate) {
       data.vacancies = previousVacancies;
       activePipelineStage = previousTab;
     }
-    alert(saved ? `Candidate stage saved, but vacancy closure failed: ${error.message}` : `Stage update failed: ${error.message}`);
+    const rawMsg = error?.message || 'Unknown error';
+    const friendlyMsg = (rawMsg === 'Failed to fetch' || rawMsg.includes('network') || rawMsg.includes('Network'))
+      ? 'Network connection interrupted. Please check your internet and try again.'
+      : rawMsg;
+    alert(saved ? `Candidate stage saved, but vacancy closure failed: ${rawMsg}` : `Stage update failed: ${friendlyMsg}`);
   } finally {
     _savingCandidateId = null;
     _pendingStageUpdates--;

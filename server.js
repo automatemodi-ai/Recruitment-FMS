@@ -542,12 +542,12 @@ const findDuplicateCandidate = async ({ phone, email, excludeId = null }) => {
 };
 
 // Cached MongoDB Atlas Connection for Serverless & Local
-let cachedConnection = null;
-
+let superadminSeeded = false;
 const seedSuperadmin = async () => {
+  if (superadminSeeded) return;
   try {
     const adminEmail = 'automate.modi@gmail.com';
-    const existing = await User.findOne({ email: adminEmail });
+    const existing = await User.findOne({ email: adminEmail }).lean();
     if (!existing) {
       const hashedPassword = await bcrypt.hash('Admin@123', 10);
       await User.create({
@@ -558,32 +558,47 @@ const seedSuperadmin = async () => {
       });
       console.log('Default superadmin seeded: automate.modi@gmail.com');
     }
+    superadminSeeded = true;
   } catch (err) {
     console.error('Error seeding superadmin:', err);
   }
 };
 
+let cachedPromise = null;
+
 const connectDB = async () => {
-  if (mongoose.connection.readyState >= 1) return;
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
   const uri = process.env.MONGODB_URI;
   if (!uri) {
     console.warn('MONGODB_URI is not defined in environment variables.');
-    return;
+    return null;
   }
-  if (!cachedConnection) {
-    cachedConnection = mongoose.connect(uri)
-      .then(async (conn) => {
-        console.log('Successfully connected to MongoDB Atlas');
-        await seedSuperadmin();
-        return conn;
-      })
-      .catch(err => {
-        cachedConnection = null;
-        console.error('MongoDB Atlas Connection Error:', err);
-        throw err;
-      });
+  if (mongoose.connection.readyState === 2 && cachedPromise) {
+    return await cachedPromise;
   }
-  return cachedConnection;
+  if (mongoose.connection.readyState === 0 || !cachedPromise) {
+    cachedPromise = mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000,
+      socketTimeoutMS: 30000,
+      maxPoolSize: 10,
+      bufferCommands: false
+    }).then((conn) => {
+      console.log('Successfully connected to MongoDB Atlas');
+      seedSuperadmin().catch(err => console.error('Background seedSuperadmin error:', err));
+      return conn;
+    }).catch(err => {
+      cachedPromise = null;
+      console.error('MongoDB Atlas Connection Error:', err);
+      throw err;
+    });
+  }
+  try {
+    return await cachedPromise;
+  } catch (err) {
+    cachedPromise = null;
+    throw err;
+  }
 };
 
 // Initiate connection

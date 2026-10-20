@@ -1237,6 +1237,164 @@ button:focus-visible,a:focus-visible,[tabindex="0"]:focus-visible,input:focus-vi
   text-decoration: underline;
 }
 
+/* Candidate Tracking Drawer Hover Card */
+.candidate-hover-trigger {
+  position: relative;
+  display: inline-block;
+}
+
+.candidate-hover-card {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 1050;
+  min-width: 230px;
+  max-width: 300px;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 10px 12px;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.45), 0 6px 12px -2px rgba(0, 0, 0, 0.3);
+  border: 1px solid #334155;
+  font-size: 11px;
+  line-height: 1.45;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.16s ease-out, transform 0.16s ease-out, visibility 0.16s;
+  white-space: normal;
+  text-align: left;
+}
+
+/* Tooltip top arrow pointer */
+.candidate-hover-card::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 18px;
+  border-width: 6px;
+  border-style: solid;
+  border-color: transparent transparent #334155 transparent;
+}
+.candidate-hover-card::after {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 19px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent transparent #0f172a transparent;
+}
+
+.candidate-hover-trigger:hover .candidate-hover-card,
+.candidate-hover-card:hover {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* Flip upward for candidates near the bottom if 4 or more candidates exist */
+tr:nth-child(n+4):nth-last-child(-n+2) .candidate-hover-card {
+  top: auto;
+  bottom: calc(100% + 8px);
+  transform: translateY(4px);
+}
+tr:nth-child(n+4):nth-last-child(-n+2) .candidate-hover-trigger:hover .candidate-hover-card,
+tr:nth-child(n+4):nth-last-child(-n+2) .candidate-hover-card:hover {
+  transform: translateY(0);
+}
+tr:nth-child(n+4):nth-last-child(-n+2) .candidate-hover-card::before {
+  bottom: auto;
+  top: 100%;
+  border-color: #334155 transparent transparent transparent;
+}
+tr:nth-child(n+4):nth-last-child(-n+2) .candidate-hover-card::after {
+  bottom: auto;
+  top: 100%;
+  border-color: #0f172a transparent transparent transparent;
+}
+
+.candidate-hover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.candidate-hover-name {
+  font-weight: 700;
+  color: #ffffff;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.candidate-hover-req-badge {
+  background: #0284c7;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.candidate-hover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.candidate-hover-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.candidate-hover-label {
+  color: #94a3b8;
+  font-weight: 500;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.candidate-hover-val {
+  color: #f1f5f9;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+}
+
+.candidate-hover-phone-link {
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.candidate-hover-phone-link:hover {
+  text-decoration: underline;
+  color: #7dd3fc;
+}
+
+.candidate-hover-hint {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed #334155;
+  font-size: 9.5px;
+  color: #94a3b8;
+  text-align: center;
+}
+
 /* Closed Jobs Report Tab Styles */
 .report-tab-btn[data-report-tab="closed_jobs"].active {
   color: #a94f42;
