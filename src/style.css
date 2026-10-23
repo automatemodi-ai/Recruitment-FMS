@@ -17,6 +17,11 @@ nav { display:grid; gap:6px; } .nav-item { color:#9ca3af; background:transparent
 .stat-icon-blue { background:#eff6ff; color:#2563eb; }
 .stat-icon-amber { background:#fef3c7; color:#d97706; }
 .stat-icon-green { background:#dcfce7; color:#16a34a; }
+.stat-icon-purple { background:#f3e8ff; color:#7e22ce; }
+.stats.stats-dashboard { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.stat-card-reached, .stat-card-shortlisted, .stat-card-interviewed, .stat-card-vacancies, .stat-card-pipeline { cursor: pointer; user-select: none; }
+.funnel-metric-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: 11px; font-weight: 600; border-radius: 5px; background: #f1f5f9; border: 1px solid #e2e8f0; color: #334155; white-space: nowrap; }
+.dashboard-funnel-summary { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; background: #fff; border: 1px solid var(--line); padding: 5px 12px; border-radius: 6px; white-space: nowrap; }
 .stat-num { display:block; font-family:'Space Grotesk','Lato',sans-serif; font-size:30px; font-weight:700; color:#0f172a; line-height:1.1; margin:10px 0 6px; letter-spacing:-0.5px; }
 .stat-unit { font-size:16px; font-weight:600; color:#64748b; margin-left:2px; }
 .stat-footer { display:flex; align-items:center; gap:6px; font-size:11px; }
@@ -755,6 +760,7 @@ td { overflow-wrap: anywhere; }
   .top-actions { flex: 1 1 100%; }
   .user-profile-bar { margin-left: auto; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats.stats-dashboard { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .grid-two { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 1024px) {

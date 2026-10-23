@@ -548,6 +548,46 @@ const isCandidateShortlisted = c => {
   if (c.stage && c.stage !== 'Application Received (New)' && c.stage !== 'On Hold') return true;
   return false;
 };
+const isShortlistedCandidate = c => {
+  if (!c) return false;
+  if (c.screening_status === 'Shortlisted') return true;
+  if (isCandidateShortlisted(c)) return true;
+  if (c.stage && !['Application Received (New)', 'On Hold', 'Rejected', 'Dropped / Ghosted'].includes(c.stage)) return true;
+  if (Array.isArray(c.stage_history) && c.stage_history.some(h =>
+    (h.stage && h.stage.includes('Shortlist')) || (h.to_stage && h.to_stage.includes('Shortlist'))
+  )) return true;
+  return false;
+};
+const isCandidateInterviewed = c => {
+  if (!c) return false;
+  if (c.interview_date || c.interviewer || (c.interview_rating !== undefined && c.interview_rating !== null && c.interview_rating !== '') || c.interview_remarks) {
+    return true;
+  }
+  const interviewStages = [
+    'Interview Scheduled',
+    'Interview Completed (Under Evaluation)',
+    'Final Selection (HOD Approval)',
+    'Offer Released',
+    'Offer Accepted (Pre-Onboarding)',
+    'Candidate Joined (Closed - Won)'
+  ];
+  if (c.stage && (c.stage.includes('Interview') || interviewStages.includes(c.stage))) {
+    return true;
+  }
+  if (Array.isArray(c.stage_history) && c.stage_history.some(h =>
+    (h.stage && (h.stage.includes('Interview') || interviewStages.includes(h.stage))) ||
+    (h.to_stage && (h.to_stage.includes('Interview') || interviewStages.includes(h.to_stage)))
+  )) {
+    return true;
+  }
+  if (c.stage_timestamps && typeof c.stage_timestamps === 'object') {
+    const ts = c.stage_timestamps;
+    if (ts['Interview Scheduled'] || ts['Interview Completed (Under Evaluation)'] || ts['Final Selection (HOD Approval)']) {
+      return true;
+    }
+  }
+  return false;
+};
 const getVacancyStage = vacancy => vacancyStages.includes(vacancy.stage) ? vacancy.stage : 'Manpower Requirement Raised';
 const vacancyStageMeta = stage => vacancyWorkflow[stage] || vacancyWorkflow['Manpower Requirement Raised'];
 const nextVacancyStage = stage => {
@@ -1057,6 +1097,7 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
   return openRoles.map(vacancy => {
     const vacancyCandidates = candidateList.filter(c => belongsToVacancy(c, vacancy));
     const shortlistedCandidates = vacancyCandidates.filter(isCandidateShortlisted);
+    const interviewedCandidates = vacancyCandidates.filter(isCandidateInterviewed);
     const totalApplicants = vacancyCandidates.length;
     const daysActive = daysOpen(vacancy);
 
@@ -1075,9 +1116,13 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
             <span style="color: var(--muted);">📍 ${escapeHtml(vacancy.location || 'Showroom')} · 🏢 ${escapeHtml(vacancy.department || 'Operations')}</span>
             <span style="color: var(--muted);">👤 Owner: <strong>${escapeHtml(vacancy.owner || 'HR')}</strong></span>
             <span style="color: var(--muted);">⏱ Open: <strong>${daysActive}d</strong></span>
-            <button type="button" data-view="Candidates" data-candidate-vacancy="${escapeHtml(vacancy.id)}" class="shortlisted-count-chip ${shortlistedCandidates.length === 0 ? 'zero' : ''}">
-              👥 ${shortlistedCandidates.length} Shortlisted Candidate${shortlistedCandidates.length === 1 ? '' : 's'}
-            </button>
+            <div style="display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <span class="funnel-metric-chip" title="Candidates Reached for this vacancy">📝 <strong>${totalApplicants}</strong> Reached</span>
+              <button type="button" data-view="Candidates" data-candidate-vacancy="${escapeHtml(vacancy.id)}" class="shortlisted-count-chip ${shortlistedCandidates.length === 0 ? 'zero' : ''}" title="Candidates Shortlisted">
+                ⭐ <strong>${shortlistedCandidates.length}</strong> Shortlisted
+              </button>
+              <span class="funnel-metric-chip" style="background:#ecfdf5; border-color:#a7f3d0; color:#047857;" title="Candidates Interviewed for this vacancy">🎙️ <strong>${interviewedCandidates.length}</strong> Interviewed</span>
+            </div>
           </div>
         </div>
 
@@ -1190,15 +1235,29 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
     return sum + candidateList.filter(c => belongsToVacancy(c, v) && isCandidateShortlisted(c)).length;
   }, 0);
 
+  // Core Funnel KPI Metrics specifically requested
+  const candidatesReached = candidateList.length;
+  const shortlistedCandidates = candidateList.filter(isShortlistedCandidate);
+  const interviewedCandidates = candidateList.filter(isCandidateInterviewed);
+
   // 1-Click Quick Preset calculations
   const todayCandidates = candidateList.filter(c => isDateInTabPeriod(c.timestamp || c.createdAt, 'daily'));
   const pendingScreening = candidateList.filter(c => c.screening_status === 'Pending Review' || c.stage === 'Application Received (New)');
   const overdueCandidates = overdue;
-  const interviewCandidates = candidateList.filter(c => c.stage.includes('Interview') || c.interview_date);
+  const interviewCandidates = interviewedCandidates;
 
   let activePresetCandidates = null;
   let presetHeading = '';
-  if (activeDashboardPreset === 'today') {
+  if (activeDashboardPreset === 'reached') {
+    activePresetCandidates = candidateList;
+    presetHeading = '📝 Candidates Reached (All Received Applications)';
+  } else if (activeDashboardPreset === 'shortlisted') {
+    activePresetCandidates = shortlistedCandidates;
+    presetHeading = '⭐ Candidates Screened & Shortlisted';
+  } else if (activeDashboardPreset === 'interviews' || activeDashboardPreset === 'interviewed') {
+    activePresetCandidates = interviewedCandidates;
+    presetHeading = '🎙️ Candidates Interviewed (Scheduled or Evaluated)';
+  } else if (activeDashboardPreset === 'today') {
     activePresetCandidates = todayCandidates;
     presetHeading = '🟢 New Applications Received Today';
   } else if (activeDashboardPreset === 'screening') {
@@ -1207,9 +1266,6 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
   } else if (activeDashboardPreset === 'overdue') {
     activePresetCandidates = overdueCandidates;
     presetHeading = '🔴 Candidates Overdue on Target TAT (> 3 Days)';
-  } else if (activeDashboardPreset === 'interviews') {
-    activePresetCandidates = interviewCandidates;
-    presetHeading = '🔵 Candidates with Interviews Scheduled';
   }
 
   const latestActivity = [...candidateList].sort((a,b) => new Date(b.stage_updated_at || 0) - new Date(a.stage_updated_at || 0)).slice(0, 4);
@@ -1224,8 +1280,46 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
   })}
 
   <!-- Executive KPI Metrics Overview -->
-  <div class="stats">
-    <div class="stat stat-card-vacancies">
+  <div class="stats stats-dashboard">
+    <div class="stat stat-card-reached" data-dashboard-preset="reached" style="cursor: pointer;" title="Click to view all Candidates Reached">
+      <div class="stat-header">
+        <span class="stat-label">Candidates Reached</span>
+        <div class="stat-icon stat-icon-blue">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        </div>
+      </div>
+      <strong class="stat-num" style="color: #1e40af;">${candidatesReached}</strong>
+      <div class="stat-footer">
+        <span class="stat-desc">Total applicant records</span>
+      </div>
+    </div>
+    <div class="stat stat-card-shortlisted" data-dashboard-preset="shortlisted" style="cursor: pointer;" title="Click to view all Candidates Shortlisted">
+      <div class="stat-header">
+        <span class="stat-label">Candidates Shortlisted</span>
+        <div class="stat-icon stat-icon-amber">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+        </div>
+      </div>
+      <strong class="stat-num" style="color: #b45309;">${shortlistedCandidates.length}</strong>
+      <div class="stat-footer">
+        <span class="stat-pill pill-ok">${candidatesReached ? Math.round((shortlistedCandidates.length / candidatesReached) * 100) : 0}% screening rate</span>
+        <span class="stat-desc">Passed CV screening</span>
+      </div>
+    </div>
+    <div class="stat stat-card-interviewed" data-dashboard-preset="interviews" style="cursor: pointer;" title="Click to view all Candidates Interviewed">
+      <div class="stat-header">
+        <span class="stat-label">Candidates Interviewed</span>
+        <div class="stat-icon stat-icon-green">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        </div>
+      </div>
+      <strong class="stat-num" style="color: #047857;">${interviewedCandidates.length}</strong>
+      <div class="stat-footer">
+        <span class="stat-pill pill-ok">${shortlistedCandidates.length ? Math.round((interviewedCandidates.length / shortlistedCandidates.length) * 100) : 0}% of shortlisted</span>
+        <span class="stat-desc">Scheduled or evaluated</span>
+      </div>
+    </div>
+    <div class="stat stat-card-vacancies" data-view="Vacancies" style="cursor: pointer;" title="Click to manage open vacancies">
       <div class="stat-header">
         <span class="stat-label">Open Vacancies</span>
         <div class="stat-icon stat-icon-red">
@@ -1234,44 +1328,19 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
       </div>
       <strong class="stat-num">${open}</strong>
       <div class="stat-footer">
-        <span class="stat-desc">Active job openings</span>
+        <span class="stat-desc">Active job openings · Avg: ${averageDays}d</span>
       </div>
     </div>
-    <div class="stat stat-card-candidates">
-      <div class="stat-header">
-        <span class="stat-label">Total Applications</span>
-        <div class="stat-icon stat-icon-blue">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-        </div>
-      </div>
-      <strong class="stat-num">${candidateList.length}</strong>
-      <div class="stat-footer">
-        <span class="stat-desc">Filtered applicant records</span>
-      </div>
-    </div>
-    <div class="stat stat-card-pipeline">
+    <div class="stat stat-card-pipeline" data-view="Candidates" style="cursor: pointer;" title="Click to view active candidates pipeline">
       <div class="stat-header">
         <span class="stat-label">Active Pipeline</span>
-        <div class="stat-icon stat-icon-amber">
+        <div class="stat-icon stat-icon-purple" style="background: #f3e8ff; color: #7e22ce;">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
         </div>
       </div>
       <strong class="stat-num">${activeList.length}</strong>
       <div class="stat-footer">
         <span class="stat-desc">Across ${open} open requisitions</span>
-      </div>
-    </div>
-    <div class="stat stat-card-tat">
-      <div class="stat-header">
-        <span class="stat-label">Avg. Days Open</span>
-        <div class="stat-icon ${averageDays > 30 ? 'stat-icon-red' : 'stat-icon-green'}">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-        </div>
-      </div>
-      <strong class="stat-num">${averageDays}<span class="stat-unit">d</span></strong>
-      <div class="stat-footer">
-        <span class="stat-pill ${averageDays > 30 ? 'pill-warn' : 'pill-ok'}">${averageDays > 30 ? '⚠️ Needs attention' : '✓ Within target'}</span>
-        <span class="stat-desc">Target TAT &le; 30d</span>
       </div>
     </div>
   </div>
@@ -1282,6 +1351,15 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
     <button type="button" class="preset-btn ${activeDashboardPreset === 'all' ? 'active' : ''}" data-dashboard-preset="all">
       All Pipeline <span class="badge">${candidateList.length}</span>
     </button>
+    <button type="button" class="preset-btn ${activeDashboardPreset === 'reached' ? 'active' : ''}" data-dashboard-preset="reached">
+      📝 Candidates Reached <span class="badge">${candidatesReached}</span>
+    </button>
+    <button type="button" class="preset-btn ${activeDashboardPreset === 'shortlisted' ? 'active' : ''}" data-dashboard-preset="shortlisted">
+      ⭐ Candidates Shortlisted <span class="badge">${shortlistedCandidates.length}</span>
+    </button>
+    <button type="button" class="preset-btn interviews ${activeDashboardPreset === 'interviews' || activeDashboardPreset === 'interviewed' ? 'active' : ''}" data-dashboard-preset="interviews">
+      🎙️ Candidates Interviewed <span class="badge">${interviewedCandidates.length}</span>
+    </button>
     <button type="button" class="preset-btn new-today ${activeDashboardPreset === 'today' ? 'active' : ''}" data-dashboard-preset="today">
       🟢 New Today <span class="badge">${todayCandidates.length}</span>
     </button>
@@ -1290,9 +1368,6 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
     </button>
     <button type="button" class="preset-btn overdue ${activeDashboardPreset === 'overdue' ? 'active' : ''}" data-dashboard-preset="overdue">
       🔴 TAT Overdue (>3 Days) <span class="badge">${overdueCandidates.length}</span>
-    </button>
-    <button type="button" class="preset-btn interviews ${activeDashboardPreset === 'interviews' ? 'active' : ''}" data-dashboard-preset="interviews">
-      🔵 Interviews Scheduled <span class="badge">${interviewCandidates.length}</span>
     </button>
   </div>
 
@@ -1366,7 +1441,13 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
         <h3 style="margin: 2px 0 0; font-size: 16px;">Open Vacancies & Shortlisted Candidates (${openRoles.length} Open Requisitions)</h3>
       </div>
       <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-        <span style="font-size: 12px; color: var(--muted);">Total Shortlisted: <strong style="color: var(--ink);">${totalShortlistedInOpen}</strong></span>
+        <div class="dashboard-funnel-summary" style="display:inline-flex; align-items:center; gap:8px; font-size:12px; background:#fff; border:1px solid var(--line); padding:5px 12px; border-radius:6px;">
+          <span>📝 Reached: <strong>${candidatesReached}</strong></span>
+          <span style="color:var(--line);">|</span>
+          <span>⭐ Shortlisted: <strong style="color:#2563eb;">${shortlistedCandidates.length}</strong></span>
+          <span style="color:var(--line);">|</span>
+          <span>🎙️ Interviewed: <strong style="color:#047857;">${interviewedCandidates.length}</strong></span>
+        </div>
         <button class="text-button" data-view="Vacancies" style="font-size: 12px; font-weight: 700; color: var(--green); cursor: pointer;">Manage Vacancies →</button>
       </div>
     </div>
