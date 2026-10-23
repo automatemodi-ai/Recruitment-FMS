@@ -1239,6 +1239,7 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
   const candidatesReached = candidateList.length;
   const shortlistedCandidates = candidateList.filter(isShortlistedCandidate);
   const interviewedCandidates = candidateList.filter(isCandidateInterviewed);
+  const offerCandidates = candidateList.filter(c => c.stage === 'Offer Released' || c.stage === 'Offer Accepted (Pre-Onboarding)' || Boolean(c.offer_date));
 
   // 1-Click Quick Preset calculations
   const todayCandidates = candidateList.filter(c => isDateInTabPeriod(c.timestamp || c.createdAt, 'daily'));
@@ -1257,6 +1258,9 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
   } else if (activeDashboardPreset === 'interviews' || activeDashboardPreset === 'interviewed') {
     activePresetCandidates = interviewedCandidates;
     presetHeading = '🎙️ Candidates Interviewed (Scheduled or Evaluated)';
+  } else if (activeDashboardPreset === 'offers') {
+    activePresetCandidates = offerCandidates;
+    presetHeading = '💼 Job Offers Released & Accepted';
   } else if (activeDashboardPreset === 'today') {
     activePresetCandidates = todayCandidates;
     presetHeading = '🟢 New Applications Received Today';
@@ -1359,6 +1363,9 @@ function dashboard(vacancyList = data.vacancies, candidateList = data.candidates
     </button>
     <button type="button" class="preset-btn interviews ${activeDashboardPreset === 'interviews' || activeDashboardPreset === 'interviewed' ? 'active' : ''}" data-dashboard-preset="interviews">
       🎙️ Candidates Interviewed <span class="badge">${interviewedCandidates.length}</span>
+    </button>
+    <button type="button" class="preset-btn offers ${activeDashboardPreset === 'offers' ? 'active' : ''}" data-dashboard-preset="offers" title="View candidates with offers released or accepted">
+      💼 Offers <span class="badge">${offerCandidates.length}</span>
     </button>
     <button type="button" class="preset-btn new-today ${activeDashboardPreset === 'today' ? 'active' : ''}" data-dashboard-preset="today">
       🟢 New Today <span class="badge">${todayCandidates.length}</span>
