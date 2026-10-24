@@ -600,6 +600,14 @@ const commonDateOptions = [
   { value: 'due', label: 'Deadline / Next Action' },
   { value: 'closed', label: 'Closed / Joined' }
 ];
+const reportDateOptions = [
+  { value: 'created', label: 'All Funnel Activity (Default)' },
+  { value: 'interview', label: 'Interview Date' },
+  { value: 'offer', label: 'Offer Date' },
+  { value: 'closed', label: 'Joined / Closed' },
+  { value: 'updated', label: 'Stage Updated' },
+  { value: 'applied_only', label: 'Application Date Only' }
+];
 const vacancyDateOptions = [
   { value: 'opened', label: 'Opening Date' },
   { value: 'deadline', label: 'Deadline' },
@@ -929,11 +937,40 @@ function applyVacancyFilters(list, filter) {
   });
 }
 
-function applyCandidateFilters(list, filter) {
+function candidateHasFunnelActivityInRange(c, from, to) {
+  if (!from && !to) return true;
+  if (matchesDateRange(c.timestamp || c.createdAt, from, to)) return true;
+  if (matchesDateRange(c.stage_updated_at || c.updatedAt, from, to)) return true;
+  if (matchesDateRange(c.interview_date, from, to)) return true;
+  if (matchesDateRange(c.offer_date, from, to)) return true;
+  if (matchesDateRange(c.joining_date, from, to)) return true;
+  if (matchesDateRange(c.next_action_date, from, to)) return true;
+
+  if (c.stage_timestamps && typeof c.stage_timestamps === 'object') {
+    for (const val of Object.values(c.stage_timestamps)) {
+      if (val && (matchesDateRange(val.entered_at, from, to) || matchesDateRange(val.completed_at, from, to))) {
+        return true;
+      }
+    }
+  }
+
+  if (Array.isArray(c.stage_history)) {
+    for (const h of c.stage_history) {
+      if (matchesDateRange(h.entered_at || h.completed_at || h.exited_at || h.updated_at, from, to)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function applyCandidateFilters(list, filter, isReport = false) {
   return list.filter(candidate => {
     const vacancy = linkedVacancy(candidate);
     const screeningStatus = candidate.screening_status || 'Pending Review';
-    if (filter.department && !sameFilterValue(vacancy.department, filter.department)) return false;
+    const dept = vacancy.department || candidate.department || (candidate.role && candidate.role.toLowerCase().includes('hotel') ? 'Hotel Operations / Front Office' : 'Operations');
+    if (filter.department && !sameFilterValue(dept, filter.department)) return false;
     if (filter.priority && !sameFilterValue(vacancy.priority, filter.priority)) return false;
     if (filter.owner && !sameFilterValue(vacancy.owner, filter.owner)) return false;
     if (filter.status && !sameFilterValue(vacancy.status, filter.status)) return false;
@@ -941,6 +978,16 @@ function applyCandidateFilters(list, filter) {
     if (filter.source && !sameFilterValue(candidate.source, filter.source)) return false;
     if (filter.location && !sameFilterValue(candidate.location, filter.location) && !sameFilterValue(vacancy.location, filter.location)) return false;
     if (filter.screening_status && !sameFilterValue(screeningStatus, filter.screening_status)) return false;
+
+    if (isReport || filter.dateField === 'activity') {
+      if (filter.dateField === 'applied_only') {
+        return matchesDateRange(getCandidateDate(candidate, 'created'), filter.from, filter.to);
+      }
+      if (filter.dateField && !['activity', 'created'].includes(filter.dateField)) {
+        return matchesDateRange(getCandidateDate(candidate, filter.dateField), filter.from, filter.to);
+      }
+      return candidateHasFunnelActivityInRange(candidate, filter.from, filter.to);
+    }
     return matchesDateRange(getCandidateDate(candidate, filter.dateField), filter.from, filter.to);
   });
 }
@@ -1726,12 +1773,13 @@ let expandedReportRoles = new Set();
 let reportTrackingSearch = '';
 
 function isDateInTabPeriod(dateValue, tab) {
-  if (tab === 'vacancy' || tab === 'closed_jobs') return true;
-  // When custom date filter is active on Reports, bypass daily/weekly/monthly restriction
-  if (filters.reports && (filters.reports.from || filters.reports.to)) {
-    return true;
-  }
   if (!dateValue) return false;
+  // When custom date filter is active on Reports, match against that custom date range
+  if (filters.reports && (filters.reports.from || filters.reports.to)) {
+    return matchesDateRange(dateValue, filters.reports.from, filters.reports.to);
+  }
+  if (tab === 'vacancy' || tab === 'closed_jobs') return true;
+
   const date = parseDateValue(dateValue);
   if (!date) return false;
   const now = new Date();
@@ -1756,17 +1804,59 @@ function isDateInTabPeriod(dateValue, tab) {
 }
 
 function candidateMatchesStageInPeriod(c, targetStages, tab) {
-  const customDateActive = Boolean(filters.reports && (filters.reports.from || filters.reports.to));
-  if (tab === 'vacancy' || tab === 'closed_jobs' || customDateActive) {
+  const isCumulative = (tab === 'vacancy' || tab === 'closed_jobs') && !(filters.reports && (filters.reports.from || filters.reports.to));
+  if (isCumulative) {
     return targetStages.some(s => c.stage === s || (c.stage_history || []).some(h => h.stage === s || h.to_stage === s));
   }
-  if (targetStages.includes(c.stage) && isDateInTabPeriod(c.stage_updated_at || c.timestamp, tab)) {
+
+  // 1. Current stage check
+  if (targetStages.includes(c.stage)) {
+    if (isDateInTabPeriod(c.stage_updated_at || c.timestamp, tab)) {
+      return true;
+    }
+    const currentStamp = (c.stage_timestamps || {})[c.stage];
+    if (currentStamp && (isDateInTabPeriod(currentStamp.entered_at, tab) || isDateInTabPeriod(currentStamp.completed_at, tab))) {
+      return true;
+    }
+  }
+
+  // 2. Specific stage date fields
+  const isInterview = targetStages.some(s => s.includes('Interview'));
+  if (isInterview && c.interview_date && isDateInTabPeriod(c.interview_date, tab)) {
     return true;
   }
-  return (c.stage_history || []).some(h => {
-    const matches = targetStages.includes(h.stage) || targetStages.includes(h.to_stage);
-    return matches && isDateInTabPeriod(h.completed_at || h.exited_at || h.entered_at, tab);
-  });
+
+  const isOffer = targetStages.some(s => s.includes('Offer'));
+  if (isOffer && c.offer_date && isDateInTabPeriod(c.offer_date, tab)) {
+    return true;
+  }
+
+  const isJoining = targetStages.some(s => s.includes('Joined'));
+  if (isJoining && c.joining_date && isDateInTabPeriod(c.joining_date, tab)) {
+    return true;
+  }
+
+  // 3. Stage timestamps map
+  if (c.stage_timestamps && typeof c.stage_timestamps === 'object') {
+    for (const s of targetStages) {
+      const stamp = c.stage_timestamps[s];
+      if (stamp && (isDateInTabPeriod(stamp.entered_at, tab) || isDateInTabPeriod(stamp.completed_at, tab))) {
+        return true;
+      }
+    }
+  }
+
+  // 4. Stage history transitions
+  if (Array.isArray(c.stage_history)) {
+    for (const h of c.stage_history) {
+      const matches = targetStages.includes(h.stage) || targetStages.includes(h.to_stage);
+      if (matches && isDateInTabPeriod(h.completed_at || h.exited_at || h.entered_at || h.updated_at, tab)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) {
@@ -1857,14 +1947,24 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
       entry.latestUpdate = updateTimeStr;
     }
 
+    const isCumulative = (reportTab === 'vacancy' || reportTab === 'closed_jobs') && !(filters.reports && (filters.reports.from || filters.reports.to));
+
     // No. of Candidates Reached / Forms Filled
-    if (isDateInTabPeriod(c.timestamp || c.createdAt, reportTab)) {
+    if (isCumulative || isDateInTabPeriod(c.timestamp || c.createdAt, reportTab)) {
       entry.formsFilled++;
     }
 
     // No. of Shortlisted Candidates
-    if (c.screening_status === 'Shortlisted' || candidateMatchesStageInPeriod(c, ['CV Screened & Shortlisted'], reportTab)) {
-      if (reportTab === 'vacancy' || isDateInTabPeriod(c.stage_updated_at || c.timestamp, reportTab)) {
+    if (isCumulative) {
+      if (c.screening_status === 'Shortlisted' || candidateMatchesStageInPeriod(c, ['CV Screened & Shortlisted'], reportTab)) {
+        entry.shortlisted++;
+      }
+    } else {
+      const shortlistedStamp = (c.stage_timestamps || {})['CV Screened & Shortlisted'];
+      const shortlistedInPeriod = isDateInTabPeriod(shortlistedStamp?.entered_at, reportTab)
+        || candidateMatchesStageInPeriod(c, ['CV Screened & Shortlisted'], reportTab)
+        || (c.screening_status === 'Shortlisted' && isDateInTabPeriod(c.stage_updated_at || c.timestamp, reportTab));
+      if (shortlistedInPeriod) {
         entry.shortlisted++;
       }
     }
@@ -2271,7 +2371,7 @@ function exportCandidateTrackingToCsv(tabType, rows) {
 function reports() {
   const isCustomDate = Boolean(filters.reports && (filters.reports.from || filters.reports.to));
   let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
-  const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
+  const reportCandidates = applyCandidateFilters(data.candidates, filters.reports, true);
 
   // Requirement: Under Vacancy Report Closed jobs should not be shown until selected
   if (activeReportTab === 'vacancy') {
@@ -2355,7 +2455,7 @@ function reports() {
     ` : ''}
   </div>
 
-  ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: commonDateOptions, department: true, source: true, status: true })}
+  ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: reportDateOptions, department: true, source: true, status: true })}
 
   ${activeReportTab === 'vacancy' ? `
     <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
@@ -2633,7 +2733,8 @@ function reports() {
                                     || (c.stage_history || []).find(h => h.stage === 'Interview Scheduled' || h.to_stage === 'Interview Scheduled')?.entered_at);
                                 const offerTime = c.offer_date 
                                   || c.stage_timestamps?.['Offer Released']?.entered_at 
-                                  || (c.stage_history || []).find(h => h.stage === 'Offer Released' || h.to_stage === 'Offer Released')?.entered_at;
+                                  || c.stage_timestamps?.['Offer Accepted (Pre-Onboarding)']?.entered_at
+                                  || (c.stage_history || []).find(h => h.stage === 'Offer Released' || h.to_stage === 'Offer Released' || h.stage === 'Offer Accepted (Pre-Onboarding)' || h.to_stage === 'Offer Accepted (Pre-Onboarding)')?.entered_at;
                                 const joinedTime = c.joining_date 
                                   || c.stage_timestamps?.['Candidate Joined (Closed - Won)']?.entered_at 
                                   || (c.stage_history || []).find(h => h.stage === 'Candidate Joined (Closed - Won)' || h.to_stage === 'Candidate Joined (Closed - Won)')?.entered_at;
@@ -3081,7 +3182,7 @@ function bindEvents() {
     if (activeReportTab === 'vacancy' && !filters.reports.status) {
       reportVacancies = reportVacancies.filter(v => v.status === 'Open');
     }
-    const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
+    const reportCandidates = applyCandidateFilters(data.candidates, filters.reports, true);
     if (activeReportTab === 'closed_jobs') {
       const closedData = computeClosedJobsReport(data.vacancies, data.candidates, filters.reports);
       exportClosedJobsToCsv(closedData);
@@ -3095,7 +3196,7 @@ function bindEvents() {
     if (activeReportTab === 'vacancy' && !filters.reports.status) {
       reportVacancies = reportVacancies.filter(v => v.status === 'Open');
     }
-    const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
+    const reportCandidates = applyCandidateFilters(data.candidates, filters.reports, true);
     const { rows } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
     exportCandidateTrackingToCsv(activeReportTab, rows);
   });
@@ -3117,7 +3218,7 @@ function bindEvents() {
       if (activeReportTab === 'vacancy' && !filters.reports.status) {
         reportVacancies = reportVacancies.filter(v => v.status === 'Open');
       }
-      const reportCandidates = applyCandidateFilters(data.candidates, filters.reports);
+      const reportCandidates = applyCandidateFilters(data.candidates, filters.reports, true);
       const { rows } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
       rows.forEach(r => expandedReportRoles.add(r.role));
       render();

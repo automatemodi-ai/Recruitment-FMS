@@ -243,9 +243,10 @@ test('date filtering and range logic in Recruitment FMS', async (t) => {
   await t.test('computeReportMetrics accurately counts candidates in Telephonic Round in telephonic metric', () => {
     const computeReportMetrics = vm.runInContext('computeReportMetrics', ctx);
 
+    const todayDate = new Date().toISOString().split('T')[0];
     const testCandidates = [
-      { id: 'C-10', role: 'Relationship Manager', timestamp: '2026-10-13T10:00:00Z', stage: 'Telephonic Round', screening_status: 'Shortlisted', stage_updated_at: '2026-10-13T10:30:00Z' },
-      { id: 'C-11', role: 'Relationship Manager', timestamp: '2026-10-13T11:00:00Z', stage: 'CV Screened & Shortlisted', screening_status: 'Shortlisted', stage_updated_at: '2026-10-13T11:30:00Z' }
+      { id: 'C-10', role: 'Relationship Manager', timestamp: `${todayDate}T10:00:00Z`, stage: 'Telephonic Round', screening_status: 'Shortlisted', stage_updated_at: `${todayDate}T10:30:00Z` },
+      { id: 'C-11', role: 'Relationship Manager', timestamp: `${todayDate}T11:00:00Z`, stage: 'CV Screened & Shortlisted', screening_status: 'Shortlisted', stage_updated_at: `${todayDate}T11:30:00Z` }
     ];
     const testVacancies = [
       { id: 'V-10', title: 'Relationship Manager', department: 'Sales', status: 'Open' }
