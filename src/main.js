@@ -527,9 +527,9 @@ function matchCandidateSearch(c, query) {
 const filterDefaults = {
   dashboard: { department: '', source: '', status: 'Open', dateField: 'created', from: '', to: '' },
   vacancies: { department: '', status: '', dateField: 'opened', from: '', to: '' },
-  screening: { department: '', role: '', source: '', screening_status: '', dateField: 'created', from: '', to: '' },
-  candidates: { department: '', role: '', source: '', dateField: 'created', from: '', to: '' },
-  reports: { department: '', source: '', status: '', dateField: 'created', from: '', to: '' }
+  screening: { department: '', vacancy: '', role: '', source: '', screening_status: '', dateField: 'created', from: '', to: '' },
+  candidates: { department: '', vacancy: '', role: '', source: '', dateField: 'created', from: '', to: '' },
+  reports: { department: '', vacancy: '', role: '', source: '', status: '', dateField: 'created', from: '', to: '' }
 };
 let filters = Object.fromEntries(Object.entries(filterDefaults).map(([key, value]) => [key, { ...value }]));
 
@@ -928,6 +928,8 @@ function openStepHistoryModal(type, id) {
 
 function applyVacancyFilters(list, filter) {
   return list.filter(vacancy => {
+    if (filter.vacancy && vacancy.id !== filter.vacancy && !sameFilterValue(vacancy.title, filter.vacancy)) return false;
+    if (filter.role && !sameFilterValue(vacancy.title, filter.role)) return false;
     if (filter.department && !sameFilterValue(vacancy.department, filter.department)) return false;
     if (filter.location && !sameFilterValue(vacancy.location, filter.location)) return false;
     if (filter.priority && !sameFilterValue(vacancy.priority, filter.priority)) return false;
@@ -971,10 +973,20 @@ function applyCandidateFilters(list, filter, isReport = false) {
     const screeningStatus = candidate.screening_status || 'Pending Review';
     const dept = vacancy.department || candidate.department || (candidate.role && candidate.role.toLowerCase().includes('hotel') ? 'Hotel Operations / Front Office' : 'Operations');
     if (filter.department && !sameFilterValue(dept, filter.department)) return false;
+    if (filter.vacancy) {
+      const allVacancies = (typeof data !== 'undefined' && data && Array.isArray(data.vacancies)) ? data.vacancies : [];
+      const selectedV = allVacancies.find(v => v.id === filter.vacancy || sameFilterValue(v.title, filter.vacancy));
+      const matchReq = candidate.requirement_id && (candidate.requirement_id === filter.vacancy || (selectedV && candidate.requirement_id === selectedV.id));
+      const matchLinked = vacancy && vacancy.id && (vacancy.id === filter.vacancy || (selectedV && vacancy.id === selectedV.id));
+      const matchRole = selectedV && sameFilterValue(candidate.role, selectedV.title);
+      if (!matchReq && !matchLinked && !matchRole && !sameFilterValue(candidate.role, filter.vacancy)) {
+        return false;
+      }
+    }
     if (filter.priority && !sameFilterValue(vacancy.priority, filter.priority)) return false;
     if (filter.owner && !sameFilterValue(vacancy.owner, filter.owner)) return false;
     if (filter.status && !sameFilterValue(vacancy.status, filter.status)) return false;
-    if (filter.role && !sameFilterValue(candidate.role, filter.role)) return false;
+    if (filter.role && !sameFilterValue(candidate.role, filter.role) && !sameFilterValue(vacancy.title, filter.role)) return false;
     if (filter.source && !sameFilterValue(candidate.source, filter.source)) return false;
     if (filter.location && !sameFilterValue(candidate.location, filter.location) && !sameFilterValue(vacancy.location, filter.location)) return false;
     if (filter.screening_status && !sameFilterValue(screeningStatus, filter.screening_status)) return false;
@@ -994,7 +1006,11 @@ function applyCandidateFilters(list, filter, isReport = false) {
 
 function renderSelectFilter(filterKey, label, options, placeholder, selectedValue) {
   const hasVal = selectedValue !== undefined && selectedValue !== null && String(selectedValue).trim() !== '';
-  return `<label class="filter-field"><span>${label}</span><select class="filter-control ${hasVal ? 'has-value' : ''}" data-filter-key="${filterKey}"><option value="">${placeholder}</option>${options.map(option => `<option value="${escapeHtml(option)}" ${sameFilterValue(selectedValue, option) ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}</select></label>`;
+  return `<label class="filter-field"><span>${label}</span><select class="filter-control ${hasVal ? 'has-value' : ''}" data-filter-key="${filterKey}"><option value="">${placeholder}</option>${options.map(option => {
+    const val = typeof option === 'object' && option !== null ? option.value : option;
+    const text = typeof option === 'object' && option !== null ? option.label : option;
+    return `<option value="${escapeHtml(val)}" ${sameFilterValue(selectedValue, val) ? 'selected' : ''}>${escapeHtml(text)}</option>`;
+  }).join('')}</select></label>`;
 }
 
 function renderDateByFilter(filterKey, label, options, selectedValue, isDateActive = false) {
@@ -1027,6 +1043,22 @@ function renderFilterPanel(key, settings) {
   const sourceOptions = uniqueValues([...data.candidates.map(candidate => candidate.source), 'Naukri', 'Indeed', 'Referral', 'Consultant', 'Walk-in', 'Website', 'LinkedIn', 'Other']);
   const fields = [];
   if (settings.department) fields.push(renderSelectFilter('department', 'Department', departments, 'All departments', filter.department));
+  if (settings.vacancy) {
+    let availableVacancies = (typeof data !== 'undefined' && data && Array.isArray(data.vacancies)) ? data.vacancies : [];
+    if (filter.department) {
+      const filteredByDept = availableVacancies.filter(v => sameFilterValue(v.department, filter.department) || v.id === filter.vacancy);
+      if (filteredByDept.length > 0) availableVacancies = filteredByDept;
+    }
+    const vacancyOpts = availableVacancies.slice().sort((a, b) => {
+      if (a.status === 'Open' && b.status !== 'Open') return -1;
+      if (a.status !== 'Open' && b.status === 'Open') return 1;
+      return (a.title || '').localeCompare(b.title || '');
+    }).map(v => ({
+      value: v.id,
+      label: `${v.title || 'Untitled Vacancy'}${v.id ? ` (${v.id})` : ''}${v.department ? ` · ${v.department}` : ''}${v.status && v.status !== 'Open' ? ` [${v.status}]` : ''}`
+    }));
+    fields.push(renderSelectFilter('vacancy', 'Vacancy', vacancyOpts, 'All vacancies', filter.vacancy));
+  }
   if (settings.role) fields.push(renderSelectFilter('role', 'Role', uniqueValues([...vacancyTitles, ...candidateRoles]), 'All roles', filter.role));
   if (settings.status) {
     let statusPlaceholder = 'All statuses';
@@ -1162,7 +1194,8 @@ function renderOpenVacanciesShortlistedCards(openRoles, candidateList) {
           <div class="open-vacancy-meta">
             <span style="color: var(--muted);">📍 ${escapeHtml(vacancy.location || 'Showroom')} · 🏢 ${escapeHtml(vacancy.department || 'Operations')}</span>
             <span style="color: var(--muted);">👤 Owner: <strong>${escapeHtml(vacancy.owner || 'HR')}</strong></span>
-            <span style="color: var(--muted);">⏱ Open: <strong>${daysActive}d</strong></span>
+            <span style="color: var(--muted);" title="Vacancy Opening Date">📅 Opened: <strong style="color: var(--ink);">${formatDateTime(vacancy.openedOn || vacancy.createdAt || vacancy.timestamp)}</strong> <small style="color: var(--muted); font-size: 11px;">(${daysActive}d active)</small></span>
+            ${vacancy.deadline ? `<span style="color: var(--muted);" title="Requisition Deadline">⏳ Deadline: <strong>${formatDateTime(vacancy.deadline)}</strong></span>` : ''}
             <div style="display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap;">
               <span class="funnel-metric-chip" title="Candidates Reached for this vacancy">📝 <strong>${totalApplicants}</strong> Reached</span>
               <button type="button" data-view="Candidates" data-candidate-vacancy="${escapeHtml(vacancy.id)}" class="shortlisted-count-chip ${shortlistedCandidates.length === 0 ? 'zero' : ''}" title="Candidates Shortlisted">
@@ -1663,7 +1696,7 @@ function candidates(list) {
     const paged = paginate(rows, 'screening');
 
     return `<div class="page-intro"><div><span class="section-kicker">CV SCREENING & INTAKE</span><p>Staging Area · ${screeningSummary}</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add application</button></div></div>
-    ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, role: true, source: true, screeningStatus: true })}
+    ${renderFilterPanel('screening', { title: 'CV screening view', dateOptions: candidateDateOptions, department: true, vacancy: true, role: true, source: true, screeningStatus: true })}
     <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Source</th><th>Experience</th><th>Expected CTC</th><th>Screening Action</th><th>Actions</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small style="color: #475569; display: block; margin-top: 2px;">🕒 Updated: <b>${formatDateTime(item.stage_updated_at || item.updatedAt || item.timestamp)}</b></small></div></div></button></td><td>${item.role}</td><td>${item.source}</td><td>${item.experience}</td><td>₹ ${item.expected}</td><td><select class="screening-select" data-id="${item.id}">
       <option ${item.screening_status === 'Pending Review' || !item.screening_status ? 'selected' : ''}>Pending Review</option>
       <option ${item.screening_status === 'Shortlisted' ? 'selected' : ''}>Shortlisted</option>
@@ -1703,7 +1736,7 @@ function candidates(list) {
     </div>`;
 
     return `<div class="page-intro"><div><span class="section-kicker">TALENT DATABASE</span><p>Candidate Pipeline Tracker · ${pipelineCandidates.length} active candidates in pipeline</p></div><div style="display:flex; gap:10px; align-items:center;"><button type="button" class="secondary bulk-upload-btn" data-action="bulk-candidate">📥 Bulk Upload</button><button class="primary" data-action="new-candidate">+ Add Candidate</button></div></div>
-    ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, role: true, source: true })}
+    ${renderFilterPanel('candidates', { title: 'Candidate pipeline view', dateOptions: candidateDateOptions, department: true, vacancy: true, role: true, source: true })}
     ${tabsHtml}
     <section class="table-panel ${paged.totalItems > 0 ? 'has-pagination' : ''}"><table><thead><tr><th>Candidate</th><th>Applied role</th><th>Stage control</th><th>Next action</th><th>Expected CTC</th><th>Action</th></tr></thead><tbody>${paged.items.map(item => `<tr><td><button class="candidate-profile-link" data-action="view-candidate" data-id="${item.id}"><div class="candidate-cell"><span class="initials">${item.name.split(' ').map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>${item.name}</strong><small>${item.id} · ${item.location}</small><small>${item.contacted_date ? `📞 Contacted: ${escapeHtml(item.contacted_date)}` : `Applied: ${formatDateTime(item.timestamp || getStageTimestamp(item, 'Application Received (New)').entered_at)}`}</small><small class="stage-age ${isStageOverdue(item) ? 'overdue' : ''}">${daysInStage(item)} day${daysInStage(item) === 1 ? '' : 's'} in stage${isStageOverdue(item) ? ' · TAT overdue' : ''}</small><small style="color: #475569; display: block; margin-top: 2px;">🕒 Step Updated: <b>${formatDateTime(item.stage_updated_at || item.updatedAt || item.timestamp)}</b></small></div></div></button></td><td>${item.role}<small>${item.source} · ${item.experience}</small></td>${renderCandidateStageCell(item)}<td>${item.next_action || 'Update candidate'}${item.next_action_date ? `<small>Due ${item.next_action_date}</small>` : ''}</td><td>₹ ${item.expected}</td>
     <td>
@@ -2049,6 +2082,9 @@ function computeReportMetrics(reportTab, filteredVacancies, filteredCandidates) 
 function computeClosedJobsReport(allVacancies, allCandidates, filter = filters.reports) {
   let closedList = allVacancies.filter(v => v.status === 'Closed' || v.stage === 'Vacancy Closed' || (v.filledOn && v.status !== 'Open'));
 
+  if (filter.vacancy) closedList = closedList.filter(v => v.id === filter.vacancy || sameFilterValue(v.title, filter.vacancy));
+  if (filter.role) closedList = closedList.filter(v => sameFilterValue(v.title, filter.role));
+
   if (filter.department) closedList = closedList.filter(v => sameFilterValue(v.department, filter.department));
   if (filter.location) closedList = closedList.filter(v => sameFilterValue(v.location, filter.location));
   if (filter.priority) closedList = closedList.filter(v => sameFilterValue(v.priority, filter.priority));
@@ -2375,7 +2411,7 @@ function reports() {
 
   // Requirement: Under Vacancy Report Closed jobs should not be shown until selected
   if (activeReportTab === 'vacancy') {
-    if (!filters.reports.status) {
+    if (!filters.reports.status && !filters.reports.vacancy) {
       reportVacancies = reportVacancies.filter(v => v.status === 'Open');
     } else if (filters.reports.status === 'Closed') {
       reportVacancies = reportVacancies.filter(v => v.status === 'Closed');
@@ -2455,13 +2491,13 @@ function reports() {
     ` : ''}
   </div>
 
-  ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: reportDateOptions, department: true, source: true, status: true })}
+  ${renderFilterPanel('reports', { title: 'Filter Report View', dateOptions: reportDateOptions, department: true, vacancy: true, role: true, source: true, status: true })}
 
   ${activeReportTab === 'vacancy' ? `
     <div style="background: #fff5f5; border: 1px solid #fed7d7; border-radius: 6px; padding: 10px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
       <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #c53030;">
         <span style="font-weight: 700;">ℹ️ VACANCY REPORT FILTER:</span>
-        <span>${filters.reports.status === 'Closed' ? 'Showing <strong>Closed Jobs</strong>.' : filters.reports.status === 'All' ? 'Showing <strong>All Vacancies (Including Closed)</strong>.' : 'Closed jobs are hidden by default. Showing <strong>Open Vacancies only</strong>.'}</span>
+        <span>${filters.reports.vacancy ? `Filtered by Vacancy: <strong>${escapeHtml((data.vacancies.find(v => v.id === filters.reports.vacancy)?.title) || filters.reports.vacancy)}</strong>.` : filters.reports.status === 'Closed' ? 'Showing <strong>Closed Jobs</strong>.' : filters.reports.status === 'All' ? 'Showing <strong>All Vacancies (Including Closed)</strong>.' : 'Closed jobs are hidden by default. Showing <strong>Open Vacancies only</strong>.'}</span>
       </div>
       <div style="display: flex; gap: 8px; font-size: 11px; align-items: center;">
         <button type="button" class="text-button" data-filter-set-status="Closed" style="color: #a94f42; font-weight: 700; cursor: pointer;">Show Closed Jobs</button>
@@ -3179,9 +3215,9 @@ function bindEvents() {
   });
   document.querySelectorAll('[data-action="export-report-csv"]').forEach(button => button.onclick = () => {
     let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
-    if (activeReportTab === 'vacancy' && !filters.reports.status) {
-      reportVacancies = reportVacancies.filter(v => v.status === 'Open');
-    }
+    if (activeReportTab === 'vacancy' && !filters.reports.status && !filters.reports.vacancy) {
+        reportVacancies = reportVacancies.filter(v => v.status === 'Open');
+      }
     const reportCandidates = applyCandidateFilters(data.candidates, filters.reports, true);
     if (activeReportTab === 'closed_jobs') {
       const closedData = computeClosedJobsReport(data.vacancies, data.candidates, filters.reports);
@@ -3193,9 +3229,9 @@ function bindEvents() {
   });
   document.querySelectorAll('[data-action="export-candidate-tracking-csv"]').forEach(button => button.onclick = () => {
     let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
-    if (activeReportTab === 'vacancy' && !filters.reports.status) {
-      reportVacancies = reportVacancies.filter(v => v.status === 'Open');
-    }
+    if (activeReportTab === 'vacancy' && !filters.reports.status && !filters.reports.vacancy) {
+        reportVacancies = reportVacancies.filter(v => v.status === 'Open');
+      }
     const reportCandidates = applyCandidateFilters(data.candidates, filters.reports, true);
     const { rows } = computeReportMetrics(activeReportTab, reportVacancies, reportCandidates);
     exportCandidateTrackingToCsv(activeReportTab, rows);
@@ -3215,7 +3251,7 @@ function bindEvents() {
   document.querySelectorAll('[data-action="expand-all-tracking"]').forEach(button => {
     button.onclick = () => {
       let reportVacancies = applyVacancyFilters(data.vacancies, filters.reports);
-      if (activeReportTab === 'vacancy' && !filters.reports.status) {
+      if (activeReportTab === 'vacancy' && !filters.reports.status && !filters.reports.vacancy) {
         reportVacancies = reportVacancies.filter(v => v.status === 'Open');
       }
       const reportCandidates = applyCandidateFilters(data.candidates, filters.reports, true);

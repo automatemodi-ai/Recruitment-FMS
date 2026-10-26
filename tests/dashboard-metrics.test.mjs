@@ -186,6 +186,10 @@ test('Recruitment Dashboard specific metrics: Reached, Shortlisted, Interviewed'
     assert.ok(dashboardHtml.includes('Reached: <strong>7</strong>'), 'Pipeline header contains Reached: 7');
     assert.ok(dashboardHtml.includes('Shortlisted: <strong style="color:#2563eb;">5</strong>'), 'Pipeline header contains Shortlisted: 5');
     assert.ok(dashboardHtml.includes('Interviewed: <strong style="color:#047857;">4</strong>'), 'Pipeline header contains Interviewed: 4');
+
+    // Verify vacancy card displays opening date
+    assert.ok(dashboardHtml.includes('Opened:'), 'Vacancy card must display Opened: date label');
+    assert.ok(dashboardHtml.includes('2026-10-01') || dashboardHtml.includes('Oct 2026'), 'Vacancy card must display opening date of vacancy');
   });
 
   await t.test('dashboard presets for reached, shortlisted, and interviews work cleanly', () => {
