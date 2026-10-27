@@ -155,4 +155,8 @@ test('Vacancy filter in Report module and interview metrics calculation', async 
     assert.equal(totals.finalInterview, 1);
     assert.equal(totals.hrInterview + totals.finalInterview, 3);
   });
+
+  await t.test('positions list contains General Supervisor', () => {
+    assert.ok(source.includes('"General Supervisor"'), 'positions list in main.js must contain "General Supervisor"');
+  });
 });
